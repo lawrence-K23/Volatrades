@@ -50,6 +50,7 @@ const AutoTrader = lazy(() => import('../auto-trader'));
 const ManualTrader = lazy(() => import('../manual-trader'));
 const TradingView = lazy(() => import('../trading-view'));
 const BulkTrader = lazy(() => import('../bulk-trader'));
+const Dcircles = lazy(() => import('../dcircles'));
 const CopyTrader = lazy(() => import('../copy-trader'));
 
 const AppWrapper = observer(() => {
@@ -83,19 +84,24 @@ const AppWrapper = observer(() => {
     const { clear } = summary_card;
     const { DASHBOARD, BOT_BUILDER } = DBOT_TABS;
     const init_render = React.useRef(true);
+    // Index for index with DBOT_TABS and the tab order in the markup below: this
+    // list is read by position, so a stale order sends #hash links to the wrong
+    // tab (it still held the pre-reorder order, which is why the address bar
+    // read #trading_view while Bulk Trader was open).
     const hash = [
         'dashboard',
         'bot_builder',
         'chart',
         'tutorial',
         'free_bots',
+        'auto_trader',
         'analysis_tool',
         'scanner',
-        'auto_trader',
         'manual_trader',
-        'trading_view',
         'bulk_trader',
+        'dcircles',
         'copy_trader',
+        'trading_view',
     ];
     const { isDesktop } = useDevice();
     const location = useLocation();
@@ -575,6 +581,23 @@ const AppWrapper = observer(() => {
                                         }
                                     >
                                         <BulkTrader />
+                                    </Suspense>
+                                </div>
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <NavIcon name='dcircles' />
+                                        <Localize i18n_default_text='Dcircles' />
+                                    </>
+                                }
+                                id='id-dcircles'
+                            >
+                                <div className='main__tab-panel'>
+                                    <Suspense
+                                        fallback={<ChunkLoader message={localize('Please wait, loading Dcircles...')} />}
+                                    >
+                                        <Dcircles />
                                     </Suspense>
                                 </div>
                             </div>

@@ -104,6 +104,14 @@ const PATHS: Record<TNavIconName, JSX.Element> = {
             <path d='M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3' />
         </>
     ),
+    // Dcircles: a ring with a part-filled arc, as the page draws per digit.
+    dcircles: (
+        <>
+            <circle cx='12' cy='12' r='8.5' />
+            <path d='M12 3.5a8.5 8.5 0 0 1 8.5 8.5' />
+            <circle cx='12' cy='12' r='2.5' />
+        </>
+    ),
 };
 
 const NavIcon = ({ name }: { name: TNavIconName }) => (
