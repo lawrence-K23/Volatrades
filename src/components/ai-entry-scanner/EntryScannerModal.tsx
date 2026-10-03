@@ -39,10 +39,17 @@ type TProps = {
 };
 
 /** Entry digit for a result: its data-derived trigger, else the latest digit. */
-const entryDigitOf = (row: TScanRow): string => {
+/**
+ * The digit the strategy waits for, or null when it waits for nothing.
+ *
+ * This used to fall back to the market's current last digit, which reads like
+ * an entry rule and is not one - a strategy with no trigger is a standing bias,
+ * taken on any tick, and saying "enter on 7" because 7 happens to be on screen
+ * sends a trader to wait for a condition the strategy never had.
+ */
+const triggerDigitOf = (row: TScanRow): number | null => {
     const trigger = row.best?.trigger?.previous_digit;
-    if (trigger !== undefined && trigger !== null) return String(trigger);
-    return row.last_digit === null ? '--' : String(row.last_digit);
+    return trigger === undefined || trigger === null ? null : trigger;
 };
 
 /**
@@ -123,6 +130,10 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
         try {
             const scan = await scanMarkets({
                 ticks,
+                // Volatility indices only: the other synthetics offer digit
+                // contracts but do not behave like the volatility series, and
+                // ranking them together produced picks no digit trader wants.
+                scope: 'volatility',
                 families: family === 'all' ? undefined : [family],
                 cancellation,
                 onProgress: next => {
@@ -178,8 +189,15 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
     const has_result = !!selected?.best;
     const market_text = has_result ? `${selected?.display_name} (${selected?.symbol})` : '';
     const trade_text = has_result ? selected?.best?.definition.label ?? '' : '';
-    const entry = selected ? entryDigitOf(selected) : '--';
-    const path_text = has_result ? `${entry} -> ${trade_text}` : '';
+    const trigger_digit = selected ? triggerDigitOf(selected) : null;
+    const entry = !has_result ? '--' : trigger_digit === null ? localize('Any tick') : String(trigger_digit);
+    // Says what to wait for and what to take, rather than two values with an
+    // arrow between them.
+    const path_text = !has_result
+        ? ''
+        : trigger_digit === null
+          ? localize('Any tick → {{trade}}', { trade: trade_text })
+          : localize('After a {{digit}} → {{trade}}', { digit: trigger_digit, trade: trade_text });
     const quality = selected?.best?.confident_win_rate;
 
     const readonlyField = (value: string, placeholder: string) => (

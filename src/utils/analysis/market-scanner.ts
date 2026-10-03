@@ -53,9 +53,13 @@ export type TScanResult = {
     scanned_at: number;
 };
 
+export type TScanScope = 'all' | 'volatility';
+
 export type TScanOptions = {
     /** Ticks of history to analyse per market. */
     ticks: number;
+    /** Which markets to consider. 'volatility' keeps to the volatility indices. */
+    scope?: TScanScope;
     /** Restrict to these symbols; defaults to every digit-capable open market. */
     symbols?: string[];
     /** Restrict to these strategy families. */
@@ -118,6 +122,22 @@ export const getScannableSymbols = async (): Promise<TAnalysisSymbol[]> => {
         .sort((a, b) => a.market.localeCompare(b.market) || a.display_name.localeCompare(b.display_name));
 };
 
+/**
+ * A volatility index: the 1s markets and the plain ones.
+ *
+ * Deriv's synthetics also include jump, crash/boom, step and range break
+ * indices, which offer digit contracts but behave nothing like the volatility
+ * series - their digits are not what a digit strategy is read against, so a
+ * scan that ranks them beside volatilities can recommend a market no digit
+ * trader would take.
+ */
+export const isVolatilitySymbol = (symbol: TAnalysisSymbol): boolean =>
+    /^(R_|1HZ)/.test(symbol.symbol) || /volatility/i.test(symbol.display_name);
+
+/** Volatility indices only, in the same order as getScannableSymbols. */
+export const getVolatilitySymbols = async (): Promise<TAnalysisSymbol[]> =>
+    (await getScannableSymbols()).filter(isVolatilitySymbol);
+
 /* ----------------------------------------------------------- single market */
 
 export const analyseMarket = async (
@@ -166,10 +186,18 @@ export const scanMarkets = async (options: TScanOptions): Promise<TScanResult> =
     const all = await getScannableSymbols();
 
     let targets = options.symbols?.length ? all.filter(s => options.symbols?.includes(s.symbol)) : all;
+    // Scope before any cap, so a cap cannot spend its places on markets the
+    // caller did not want.
+    if (options.scope === 'volatility') targets = targets.filter(isVolatilitySymbol);
     if (options.max_symbols && options.max_symbols > 0) targets = targets.slice(0, options.max_symbols);
 
     if (!targets.length) {
-        throw new DerivDataError('No open Deriv markets available to scan right now.', 'no_targets');
+        throw new DerivDataError(
+            options.scope === 'volatility'
+                ? 'No volatility index is open to scan right now.'
+                : 'No open Deriv markets available to scan right now.',
+            'no_targets'
+        );
     }
 
     const rows: TScanRow[] = [];
