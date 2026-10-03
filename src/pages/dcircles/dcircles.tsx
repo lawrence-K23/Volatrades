@@ -9,9 +9,8 @@
  * Every market streams at once (see use-dcircles-data), so the page is a glance
  * across the whole board rather than one market at a time.
  */
-import { type CSSProperties, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import TradingBackdrop from '@/components/trading-backdrop/TradingBackdrop';
 import { localize } from '@deriv-com/translations';
 import useDcirclesData, { type TMarket, type TMarketTicks } from './use-dcircles-data';
 import './dcircles.scss';
@@ -131,7 +130,6 @@ const MarketCard = ({ market, data, ticks }: { market: TMarket; data?: TMarketTi
                         className={`dcircles__circle dcircles__circle--${stats.colours[digit]}${
                             digit === stats.last_digit ? ' dcircles__circle--hit' : ''
                         }`}
-                        style={{ '--progress': `${percentage}%` } as CSSProperties}
                         title={`${stats.counts[digit]} ${localize('of')} ${stats.total}`}
                     >
                         <span className='dcircles__digit'>{digit}</span>
@@ -206,44 +204,41 @@ const Dcircles = observer(() => {
 
     return (
         <div className='dcircles' data-testid='dt_dcircles'>
-            <TradingBackdrop />
+            {/* The same light-blue bar the Analysis Tool heads its Circles with. */}
+            <div className='dcircles__mode'>{localize('Dcircles')}</div>
 
-            <div className='dcircles__inner'>
-                <div className='dcircles__header'>
-                    <h2 className='dcircles__title'>
-                        {localize('Dcircles')} <span className='dcircles__title-note'>({localize('last')} {ticks} {localize('ticks')})</span>
-                    </h2>
+            <div className='dcircles__toolbar'>
+                <h2 className='dcircles__title'>
+                    {localize('Dcircles')}{' '}
+                    <span className='dcircles__title-note'>
+                        ({localize('last')} {ticks} {localize('ticks')})
+                    </span>
+                </h2>
 
-                    <label className='dcircles__ticks' htmlFor='dcircles-ticks'>
-                        {localize('Ticks')}
-                        <input
-                            id='dcircles-ticks'
-                            type='number'
-                            min={10}
-                            max={1000}
-                            step={10}
-                            value={ticks}
-                            onChange={event => {
-                                const next = Number(event.target.value);
-                                if (Number.isFinite(next)) setTicks(Math.max(10, Math.min(1000, Math.trunc(next))));
-                            }}
-                        />
-                    </label>
-                </div>
+                <label className='dcircles__ticks' htmlFor='dcircles-ticks'>
+                    {localize('Ticks')}
+                    <input
+                        id='dcircles-ticks'
+                        type='number'
+                        min={10}
+                        max={1000}
+                        step={10}
+                        value={ticks}
+                        onChange={event => {
+                            const next = Number(event.target.value);
+                            if (Number.isFinite(next)) setTicks(Math.max(10, Math.min(1000, Math.trunc(next))));
+                        }}
+                    />
+                </label>
+            </div>
 
-                {error && <div className='dcircles__notice dcircles__notice--error'>{error}</div>}
-                {!error && is_loading && <div className='dcircles__notice'>{localize('Loading markets…')}</div>}
+            {error && <div className='dcircles__notice dcircles__notice--error'>{error}</div>}
+            {!error && is_loading && <div className='dcircles__notice'>{localize('Loading markets…')}</div>}
 
-                <div className='dcircles__grid'>
-                    {markets.map(market => (
-                        <MarketCard
-                            key={market.symbol}
-                            market={market}
-                            data={market_ticks[market.symbol]}
-                            ticks={ticks}
-                        />
-                    ))}
-                </div>
+            <div className='dcircles__grid'>
+                {markets.map(market => (
+                    <MarketCard key={market.symbol} market={market} data={market_ticks[market.symbol]} ticks={ticks} />
+                ))}
             </div>
         </div>
     );
