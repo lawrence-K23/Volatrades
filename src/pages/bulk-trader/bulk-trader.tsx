@@ -470,13 +470,13 @@ const BulkTrader = () => {
             <div className='bulk-trader__current-tick'>
                 <div className='bulk-trader__current-tick-label'>{localize('CURRENT TICK')}</div>
                 <div className={`bulk-trader__current-tick-price ${connectionError ? 'bulk-trader__current-tick-price--error' : ''}`}>
+                    {/* The price we last saw beats any wording: the shared tick
+                        stream runs for the whole site, so arriving on this tab
+                        there is usually already a tick to show. */}
                     {connectionError
                         ? connectionError
-                        : isLoadingTicks && ticksBuffer.length === 0
-                          ? localize('Loading...')
-                          : latestTick
-                            ? latestTick.quoteStr
-                            : localize('Updating...')}
+                        : (latestTick?.quoteStr ??
+                          (isLoadingTicks ? localize('Connecting…') : localize('Waiting for a tick…')))}
                 </div>
             </div>
 

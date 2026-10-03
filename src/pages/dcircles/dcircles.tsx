@@ -119,7 +119,7 @@ const MarketCard = ({ market, data, ticks }: { market: TMarket; data?: TMarketTi
                     </span>
                 </div>
                 <span className='dcircles__badge'>
-                    {localize('Last')} {Math.min(stats.total, ticks) || ticks}
+                    {stats.total === 0 ? localize('Waiting') : `${localize('Last')} ${Math.min(stats.total, ticks)}`}
                 </span>
             </header>
 
@@ -233,7 +233,11 @@ const Dcircles = observer(() => {
             </div>
 
             {error && <div className='dcircles__notice dcircles__notice--error'>{error}</div>}
-            {!error && is_loading && <div className='dcircles__notice'>{localize('Loading markets…')}</div>}
+            {/* Only before there is a board to show: once the markets are known
+                the cards are drawn and fill in as each one's history lands. */}
+            {!error && is_loading && !markets.length && (
+                <div className='dcircles__notice'>{localize('Connecting to the markets…')}</div>
+            )}
 
             <div className='dcircles__grid'>
                 {markets.map(market => (

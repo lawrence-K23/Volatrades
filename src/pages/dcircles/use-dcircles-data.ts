@@ -60,6 +60,16 @@ const lastDigitOf = (quote: number, pip_size: number) => {
     return Number.isFinite(digit) ? digit : 0;
 };
 
+/**
+ * Last known markets and ticks, kept for the life of the page.
+ *
+ * Leaving the tab drops the subscriptions - a dozen streams should not run
+ * behind a screen nobody is looking at - but the numbers are kept, so coming
+ * back shows the board filled in while it reconnects, rather than an empty
+ * grid and a loading line.
+ */
+const cache: { markets: TMarket[]; ticks: Record<string, TMarketTicks> } = { markets: [], ticks: {} };
+
 const waitForApi = (attempts = 60, interval = 250) =>
     new Promise<void>((resolve, reject) => {
         let tries = 0;
@@ -73,10 +83,12 @@ const waitForApi = (attempts = 60, interval = 250) =>
     });
 
 export const useDcirclesData = (tick_count: number) => {
-    const [markets, setMarkets] = useState<TMarket[]>([]);
-    const [ticks, setTicks] = useState<Record<string, TMarketTicks>>({});
+    // Start from whatever the last visit left behind, so the board is populated
+    // on arrival instead of empty.
+    const [markets, setMarkets] = useState<TMarket[]>(cache.markets);
+    const [ticks, setTicks] = useState<Record<string, TMarketTicks>>(cache.ticks);
     const [error, setError] = useState<string | null>(null);
-    const [is_loading, setIsLoading] = useState(true);
+    const [is_loading, setIsLoading] = useState(!cache.markets.length);
 
     const subscription_ids = useRef<string[]>([]);
     const listener = useRef<((evt: MessageEvent) => void) | null>(null);
@@ -129,7 +141,10 @@ export const useDcirclesData = (tick_count: number) => {
                 if (!is_mounted.current) return;
                 if (!list.length) throw new Error('No volatility markets came back from Deriv');
                 markets_ref.current = list;
+                cache.markets = list;
                 setMarkets(list);
+                // The cards can be drawn now; their numbers arrive per market.
+                if (is_mounted.current) setIsLoading(false);
 
                 // One listener for every stream: the frame carries its symbol.
                 const onMessage = (evt: MessageEvent) => {
@@ -148,13 +163,15 @@ export const useDcirclesData = (tick_count: number) => {
                         setTicks(prev => {
                             const current = prev[market.symbol] ?? { quotes: [], digits: [] };
                             const limit = Math.max(10, count_ref.current);
-                            return {
+                            const next = {
                                 ...prev,
                                 [market.symbol]: {
                                     quotes: [...current.quotes, quote].slice(-limit),
                                     digits: [...current.digits, lastDigitOf(quote, pip_size)].slice(-limit),
                                 },
                             };
+                            cache.ticks = next;
+                            return next;
                         });
                     } catch {
                         /* a frame we do not care about */
@@ -163,10 +180,14 @@ export const useDcirclesData = (tick_count: number) => {
                 listener.current = onMessage;
                 api_base?.api?.connection?.addEventListener('message', onMessage);
 
-                // Seed each market with history, then follow it live. Sequential,
-                // so a dozen markets do not all demand history at once.
-                for (const market of list) {
-                    if (!is_mounted.current) return;
+                // Seed and subscribe a few markets at a time. One after another
+                // meant the last card waited on the twelve before it, which is
+                // what put a loading line in front of the whole board; all at
+                // once would ask Deriv for a dozen histories in one breath.
+                const CONCURRENCY = 5;
+                let cursor = 0;
+
+                const seedOne = async (market: TMarket) => {
                     try {
                         const history: any = await (api_base.api as any).send({
                             ticks_history: market.symbol,
@@ -180,14 +201,20 @@ export const useDcirclesData = (tick_count: number) => {
                         const history_pip = Number.isFinite(Number(history?.pip_size))
                             ? Number(history.pip_size)
                             : market.pip_size;
-                        if (prices.length) {
-                            setTicks(prev => ({
-                                ...prev,
-                                [market.symbol]: {
-                                    quotes: prices,
-                                    digits: prices.map(price => lastDigitOf(price, history_pip)),
-                                },
-                            }));
+                        if (prices.length && is_mounted.current) {
+                            // Each market appears as soon as its own history
+                            // lands, rather than waiting for the whole board.
+                            setTicks(prev => {
+                                const next = {
+                                    ...prev,
+                                    [market.symbol]: {
+                                        quotes: prices,
+                                        digits: prices.map(price => lastDigitOf(price, history_pip)),
+                                    },
+                                };
+                                cache.ticks = next;
+                                return next;
+                            });
                         }
 
                         const stream: any = await (api_base.api as any).send({ ticks: market.symbol, subscribe: 1 });
@@ -196,7 +223,18 @@ export const useDcirclesData = (tick_count: number) => {
                     } catch {
                         /* one market failing should not stop the rest */
                     }
-                }
+                };
+
+                const worker = async () => {
+                    for (;;) {
+                        if (!is_mounted.current) return;
+                        const index = cursor++;
+                        if (index >= list.length) return;
+                        await seedOne(list[index]);
+                    }
+                };
+
+                await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, worker));
 
                 if (is_mounted.current) setIsLoading(false);
             } catch (caught) {
