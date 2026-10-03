@@ -109,25 +109,32 @@ export const matchDifferSplit = (digits: number[], target: number): TSplit =>
 
 export const evenOddSplit = (digits: number[]): TSplit => splitBy(digits, d => d % 2 === 0);
 
-/** RISE / FALL measured on the quotes themselves; flat ticks count for neither. */
+/**
+ * RISE / FALL measured on the quotes themselves.
+ *
+ * A tick that repeats the previous quote is neither a rise nor a fall, and
+ * counting it in the denominator left the two percentages short of 100 by
+ * however many flat ticks the run held - which is why this pair never summed
+ * the way Even/Odd does. The split is now taken over the ticks that actually
+ * moved, so Rise and Fall are two halves of the same whole.
+ */
 export const riseFallSplit = (quotes: number[]): TSplit => {
     let rises = 0;
     let falls = 0;
-    let compared = 0;
     for (let i = 1; i < quotes.length; i++) {
         const prev = Number(quotes[i - 1]);
         const curr = Number(quotes[i]);
         if (!Number.isFinite(prev) || !Number.isFinite(curr)) continue;
-        compared += 1;
         if (curr > prev) rises += 1;
         else if (curr < prev) falls += 1;
     }
+    const moved = rises + falls;
     return {
-        first: compared > 0 ? (rises / compared) * 100 : 0,
-        second: compared > 0 ? (falls / compared) * 100 : 0,
+        first: moved > 0 ? (rises / moved) * 100 : 0,
+        second: moved > 0 ? (falls / moved) * 100 : 0,
         first_count: rises,
         second_count: falls,
-        total: compared,
+        total: moved,
     };
 };
 

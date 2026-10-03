@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tick streams for every volatility market at once.
  *
  * Dcircles shows a card per market, so it needs all of them running together -
@@ -20,15 +20,31 @@ export type TMarketTicks = {
     digits: number[];
 };
 
-/** Volatility indices only, 1s and plain, in a stable order. */
-export const pickVolatilityMarkets = (active_symbols: any[]): TMarket[] => {
+/**
+ * Volatility indices only, 1s and plain, in a stable order.
+ *
+ * The Options API names these fields differently from the old one -
+ * underlying_symbol rather than symbol, underlying_symbol_name rather than
+ * display_name, and pip_size as a count of decimal places rather than a pip
+ * value. Reading only `symbol` matched nothing, which is why the board came up
+ * empty with no markets and no error to show for it.
+ */
+export const pickVolatilityMarkets = (active_symbols: any[], pip_sizes: Record<string, number> = {}): TMarket[] => {
     const markets = (active_symbols || [])
-        .filter(item => /^(R_|1HZ)/.test(item.symbol || ''))
-        .map(item => ({
-            symbol: item.symbol as string,
-            display_name: (item.display_name as string) || (item.symbol as string),
-            pip_size: Number(item.pip ? Math.round(-Math.log10(Number(item.pip))) : (item.pip_size ?? 2)),
-        }));
+        .map(item => {
+            const symbol: string = item.underlying_symbol || item.symbol || '';
+            const display_name: string =
+                item.display_name || item.underlying_symbol_name || item.underlying_symbol || symbol;
+            const raw_pip = item.pip_size ?? item.pip;
+            const pip_size =
+                raw_pip !== undefined && Number.isFinite(Number(raw_pip))
+                    ? Number(raw_pip)
+                    : Number.isFinite(pip_sizes[symbol])
+                      ? pip_sizes[symbol]
+                      : 2;
+            return { symbol, display_name, pip_size };
+        })
+        .filter(market => /^(R_|1HZ)/.test(market.symbol) && !!market.display_name);
 
     // 1s markets first, then the plain ones, each by their number.
     const rank = (symbol: string) => (symbol.startsWith('1HZ') ? 0 : 1);
@@ -94,11 +110,24 @@ export const useDcirclesData = (tick_count: number) => {
             try {
                 await waitForApi();
 
-                const response: any = await (api_base.api as any).send({ active_symbols: 'brief' });
-                if (response?.error) throw new Error(response.error.message);
+                // api_base already holds the symbol list; ask it to fetch only
+                // when it has none, the way the shared tick hook does.
+                if (!api_base.has_active_symbols || !Array.isArray(api_base.active_symbols) || !api_base.active_symbols.length) {
+                    try {
+                        await (api_base as any).getActiveSymbols();
+                    } catch {
+                        /* fall through to whatever is cached */
+                    }
+                }
 
-                const list = pickVolatilityMarkets(response.active_symbols);
+                const pip_sizes: Record<string, number> =
+                    api_base.pip_sizes && typeof api_base.pip_sizes === 'object'
+                        ? (api_base.pip_sizes as Record<string, number>)
+                        : {};
+
+                const list = pickVolatilityMarkets(api_base.active_symbols || [], pip_sizes);
                 if (!is_mounted.current) return;
+                if (!list.length) throw new Error('No volatility markets came back from Deriv');
                 markets_ref.current = list;
                 setMarkets(list);
 
@@ -111,6 +140,10 @@ export const useDcirclesData = (tick_count: number) => {
                         const market = markets_ref.current.find(item => item.symbol === data.tick.symbol);
                         if (!market) return;
 
+                        // Each tick states its own precision; prefer it.
+                        const pip_size = Number.isFinite(Number(data.tick.pip_size))
+                            ? Number(data.tick.pip_size)
+                            : market.pip_size;
                         const quote = Number(data.tick.quote);
                         setTicks(prev => {
                             const current = prev[market.symbol] ?? { quotes: [], digits: [] };
@@ -119,7 +152,7 @@ export const useDcirclesData = (tick_count: number) => {
                                 ...prev,
                                 [market.symbol]: {
                                     quotes: [...current.quotes, quote].slice(-limit),
-                                    digits: [...current.digits, lastDigitOf(quote, market.pip_size)].slice(-limit),
+                                    digits: [...current.digits, lastDigitOf(quote, pip_size)].slice(-limit),
                                 },
                             };
                         });
@@ -143,12 +176,16 @@ export const useDcirclesData = (tick_count: number) => {
                         });
 
                         const prices: number[] = (history?.history?.prices || []).map(Number);
+                        // The history response states the precision for this market.
+                        const history_pip = Number.isFinite(Number(history?.pip_size))
+                            ? Number(history.pip_size)
+                            : market.pip_size;
                         if (prices.length) {
                             setTicks(prev => ({
                                 ...prev,
                                 [market.symbol]: {
                                     quotes: prices,
-                                    digits: prices.map(price => lastDigitOf(price, market.pip_size)),
+                                    digits: prices.map(price => lastDigitOf(price, history_pip)),
                                 },
                             }));
                         }
@@ -195,12 +232,16 @@ export const useDcirclesData = (tick_count: number) => {
                         style: 'ticks',
                     });
                     const prices: number[] = (history?.history?.prices || []).map(Number);
+                    // The history response states the precision for this market.
+                    const history_pip = Number.isFinite(Number(history?.pip_size))
+                        ? Number(history.pip_size)
+                        : market.pip_size;
                     if (!prices.length || cancelled) continue;
                     setTicks(prev => ({
                         ...prev,
                         [market.symbol]: {
                             quotes: prices,
-                            digits: prices.map(price => lastDigitOf(price, market.pip_size)),
+                            digits: prices.map(price => lastDigitOf(price, history_pip)),
                         },
                     }));
                 } catch {
@@ -219,3 +260,5 @@ export const useDcirclesData = (tick_count: number) => {
 };
 
 export default useDcirclesData;
+
+
