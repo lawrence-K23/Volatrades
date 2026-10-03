@@ -451,3 +451,51 @@
         }
     }
 }
+
+/**
+ * Bulk Trader: the Summary / Transactions / Journal drawer, closed on arrival
+ * with only its chevron handle on the right edge, opening over the page.
+ *
+ * The geometry is restated here in full because the inherited one cannot be
+ * trusted on this screen. The drawer places itself at `left: calc(100vw - 16px)`
+ * when shut, and 100vw counts the vertical scrollbar - so on a page that scrolls,
+ * as this one does, the 16px handle ends up underneath the scrollbar with a
+ * sliver showing, which is why closing the panel looked like it had vanished
+ * altogether. Anchored from the right edge and slid out by its own width there
+ * is nothing left to measure wrongly, and the handle hangs 1.6rem outside the
+ * panel so it stays on screen either way.
+ *
+ * Every line is !important over a two-class selector: the drawer writes its open
+ * transform inline, and several of these properties are already set !important
+ * further up.
+ */
+.run-panel__container--bulk.dc-drawer {
+    position: fixed !important;
+    inset-inline-start: auto !important;
+    inset-inline-end: 0 !important;
+    // 5.6rem of header plus the 4.8rem tab strip, down to the footer.
+    top: 10.4rem !important;
+    bottom: 3.6rem !important;
+    height: auto !important;
+    width: 36.6rem !important;
+    transform: translateX(100%) !important;
+
+    @include is-RTL {
+        transform: translateX(-100%) !important;
+    }
+
+    // Open: flush with the edge, the handle just outside it showing ».
+    &.dc-drawer--open {
+        transform: translateX(0) !important;
+    }
+
+    .dc-drawer__toggle {
+        inset-inline-start: -1.6rem;
+        border-radius: 0.4rem 0 0 0.4rem;
+    }
+
+    // The handle sits outside the panel now, so the content keeps the full width.
+    .dc-drawer__container--right {
+        padding-inline-start: 0;
+    }
+}

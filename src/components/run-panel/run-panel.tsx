@@ -333,6 +333,9 @@ const RunPanel = observer(() => {
                     className={classNames('run-panel', {
                         'run-panel__container': isDesktop,
                         'run-panel__container--tour-active': isDesktop && active_tour,
+                        // Bulk Trader owns the full width, so the drawer is shut
+                        // on arrival and opens over the page - see run-panel.scss.
+                        'run-panel__container--bulk': isDesktop && active_tab === BULK_TRADER,
                     })}
                     contentClassName='run-panel__content'
                     header={header}
