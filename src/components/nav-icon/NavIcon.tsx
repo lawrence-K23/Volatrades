@@ -14,6 +14,7 @@ export type TNavIconName =
     | 'manual-trader'
     | 'trading-view'
     | 'bulk-trader'
+    | 'dcircles'
     | 'copy-trader';
 
 const PATHS: Record<TNavIconName, JSX.Element> = {

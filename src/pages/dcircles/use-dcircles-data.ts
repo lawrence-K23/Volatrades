@@ -102,8 +102,10 @@ export const useDcirclesData = (tick_count: number) => {
 
     const teardown = useCallback(() => {
         try {
+            // The same request the bot's own teardown sends: forget by the id
+            // the stream reported.
             subscription_ids.current.forEach(id => {
-                (api_base.api as any)?.forget?.(id)?.catch?.(() => {});
+                api_base.api?.send({ forget: id });
             });
             subscription_ids.current = [];
             if (listener.current) {

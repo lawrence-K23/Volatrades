@@ -268,7 +268,11 @@ const RunPanel = observer(() => {
     const { statistics } = transactions;
     const { active_tour, active_tab } = dashboard;
     const { total_payout, total_profit, total_stake, won_contracts, lost_contracts, number_of_runs } = statistics;
-    const { BOT_BUILDER, CHART, BULK_TRADER } = DBOT_TABS;
+    const { BOT_BUILDER, CHART, BULK_TRADER, ANALYSIS_TOOL } = DBOT_TABS;
+
+    // Screens that own their full width: the drawer arrives shut on these, with
+    // only its handle on the edge, and opens over the page.
+    const OVERLAY_TABS = [BULK_TRADER, ANALYSIS_TOOL];
 
     React.useEffect(() => {
         onMount();
@@ -282,10 +286,11 @@ const RunPanel = observer(() => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Bulk Trader is a full-width screen of its own, so arrive with the drawer
-    // shut - just the chevron on the edge - and let it be opened over the page.
+    // Bulk Trader and the Analysis Tool are full-width screens of their own, so
+    // arrive with the drawer shut - just the chevron on the edge - and let it be
+    // opened over the page.
     React.useEffect(() => {
-        if (active_tab === BULK_TRADER) {
+        if (OVERLAY_TABS.includes(active_tab)) {
             toggleDrawer(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -321,8 +326,9 @@ const RunPanel = observer(() => {
     );
 
     // Bulk Trader buys contracts of its own and reports them through the same
-    // stores, so it gets the same Summary / Transactions / Journal drawer.
-    const show_run_panel = [BOT_BUILDER, CHART, BULK_TRADER].includes(active_tab) || active_tour;
+    // stores, and the Analysis Tool is where those trades are decided, so both
+    // get the same Summary / Transactions / Journal drawer.
+    const show_run_panel = [BOT_BUILDER, CHART, ...OVERLAY_TABS].includes(active_tab) || active_tour;
     if ((!show_run_panel && isDesktop) || active_tour === 'bot_builder') return null;
 
     return (
@@ -333,9 +339,9 @@ const RunPanel = observer(() => {
                     className={classNames('run-panel', {
                         'run-panel__container': isDesktop,
                         'run-panel__container--tour-active': isDesktop && active_tour,
-                        // Bulk Trader owns the full width, so the drawer is shut
+                        // These screens own the full width, so the drawer is shut
                         // on arrival and opens over the page - see run-panel.scss.
-                        'run-panel__container--bulk': isDesktop && active_tab === BULK_TRADER,
+                        'run-panel__container--overlay': isDesktop && OVERLAY_TABS.includes(active_tab),
                     })}
                     contentClassName='run-panel__content'
                     header={header}

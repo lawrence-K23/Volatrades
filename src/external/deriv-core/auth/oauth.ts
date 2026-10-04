@@ -45,6 +45,11 @@ async function buildPkceParams(config: AuthConfig): Promise<URLSearchParams> {
 export async function buildAuthorizationUrl(config: AuthConfig): Promise<string> {
   const params = await buildPkceParams(config);
 
+  // Ask Deriv to authenticate the user rather than wave through whoever its
+  // own cookie remembers. Without it, "Log in" could drop someone straight
+  // into the account already signed in at Deriv, with no password asked.
+  params.set('prompt', 'login');
+
   if (config.affiliateToken) {
     const tokenParam = config.affiliateTokenParam ?? 't';
     params.set(tokenParam, config.affiliateToken);
@@ -121,18 +126,27 @@ export function validateCallback(params: CallbackParams, redirectUri: string): s
     throw new OAuthError(`OAuth error: ${params.error} - ${params.error_description || ''}`);
   }
 
+  // A callback we cannot vouch for is refused - that is the whole protection.
+  // It used to also call clearAllAuthData(), which threw away the signed-in
+  // session as well: landing on /callback twice, or pressing back onto it, left
+  // the user logged out of a session that was never in question. The PKCE pair
+  // is single-use, so clear that and nothing else.
+  const refusePkce = () => {
+    clearCSRFToken();
+    clearCodeVerifier();
+    cleanupUrl(redirectUri);
+  };
+
   // State must be present
   if (!params.state) {
-    clearAllAuthData();
-    cleanupUrl(redirectUri);
+    refusePkce();
     throw new OAuthError('Missing state parameter — possible CSRF attack');
   }
 
   // Validate CSRF token matches
   const storedToken = getCSRFToken();
   if (!storedToken || storedToken !== params.state) {
-    clearAllAuthData();
-    cleanupUrl(redirectUri);
+    refusePkce();
     throw new OAuthError('CSRF token mismatch — possible CSRF attack');
   }
 

@@ -453,7 +453,8 @@
 }
 
 /**
- * Bulk Trader: the Summary / Transactions / Journal drawer, closed on arrival
+ * Bulk Trader and the Analysis Tool: the Summary / Transactions / Journal
+ * drawer, closed on arrival
  * with only its chevron handle on the right edge, opening over the page.
  *
  * The geometry is restated here in full because the inherited one cannot be
@@ -469,7 +470,7 @@
  * transform inline, and several of these properties are already set !important
  * further up.
  */
-.run-panel__container--bulk.dc-drawer {
+.run-panel__container--overlay.dc-drawer {
     position: fixed !important;
     inset-inline-start: auto !important;
     inset-inline-end: 0 !important;

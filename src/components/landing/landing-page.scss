@@ -57,6 +57,35 @@
         gap: 1rem;
     }
 
+    // Shown when a login could not be completed, so the user is told rather
+    // than silently returned to this page.
+    &__notice {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.2rem;
+        width: min(110rem, calc(100% - 3.2rem));
+        margin: 1.2rem auto 0;
+        padding: 1rem 1.4rem;
+        border: 1px solid rgba(248, 113, 113, 0.6);
+        border-radius: 0.8rem;
+        background: rgba(127, 29, 29, 0.55);
+        color: #fee2e2;
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+
+    &__notice-close {
+        border: 0;
+        background: none;
+        color: inherit;
+        font-size: 2rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
     &__wordmark {
         font-family: 'Arial Black', 'Segoe UI Black', sans-serif;
         font-size: 2.2rem;

@@ -5,7 +5,6 @@ import { getAccountId, getAccountType, isDemoAccount, removeUrlParameter } from 
 import CommonStore from '@/stores/common-store';
 import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
 import { TAuthData } from '@/types/api-types';
-import { clearAuthData } from '@/utils/auth-utils';
 import { handleBackendError, isBackendError } from '@/utils/error-handler';
 import { activeSymbolsProcessorService } from '../../../../services/active-symbols-processor.service';
 import { observer as globalObserver } from '../../utils/observer';
@@ -34,8 +33,11 @@ type SubscriptionPromise = Promise<{
 type TApiBaseApi = {
     connection: {
         readyState: keyof typeof socket_state;
-        addEventListener: (event: string, callback: () => void) => void;
-        removeEventListener: (event: string, callback: () => void) => void;
+        // The socket hands its listener the frame. Declaring no parameter meant
+        // every page that reads raw frames - Dcircles, Manual Trader - had to be
+        // cast at the call site, or failed the type check.
+        addEventListener: (event: string, callback: (event: MessageEvent) => void) => void;
+        removeEventListener: (event: string, callback: (event: MessageEvent) => void) => void;
     };
     send: (data: unknown) => void;
     disconnect: () => void;
@@ -241,11 +243,10 @@ class APIBase {
                 setAccountList([]);
                 setAuthData(null);
 
-                // Clear necessary storage items
-                localStorage.removeItem('active_loginid');
-                localStorage.removeItem('account_type');
-                localStorage.removeItem('accountsList');
-                localStorage.removeItem('clientAccounts');
+                // The stored session is deliberately left in place. Running out
+                // of reconnection attempts means the connection failed, not that
+                // the login did, and wiping it here signed people out whenever
+                // their network wobbled.
             }
 
             this.init(true);
@@ -268,6 +269,15 @@ class APIBase {
 
                 // Authorization error
                 console.error('Authorization error:', errorMessage);
+
+                // A token Deriv has rejected outright is the one case worth
+                // ending the session for: the InvalidToken handler clears it and
+                // sends the user to log in again. Everything else is left alone
+                // to retry, rather than quietly signing the user out.
+                const error_code = (error as { code?: string })?.code ?? '';
+                if (['InvalidToken', 'AuthorizationRequired', 'TokenExpired'].includes(error_code)) {
+                    globalObserver.emit('InvalidToken', { code: error_code });
+                }
 
                 setIsAuthorizing(false);
                 return { ...error, localizedMessage: errorMessage };
@@ -358,8 +368,12 @@ class APIBase {
             }
             this.subscribe();
         } catch (e) {
+            // Something gave way while setting the connection up - a dropped
+            // socket, a request that never answered. It used to erase the stored
+            // session here, so a moment's bad connection logged the user out and
+            // the next page view showed the landing page. The session stays; the
+            // connection is retried instead.
             this.is_authorized = false;
-            clearAuthData();
             setIsAuthorized(false);
             globalObserver.emit('Error', e);
         } finally {

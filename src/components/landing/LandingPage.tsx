@@ -3,6 +3,7 @@ import { type CSSProperties, useCallback, useEffect, useState } from 'react';
 import { generateOAuthURL } from '@/components/shared';
 import { TAB_IDS } from '@/constants/bot-contents';
 import { getFreeBots } from '@/pages/free-bots/free-bot-list';
+import { takeLoginError } from '@/utils/auth-session';
 import { getAppName, LOGO_CANDIDATES } from '@/utils/branding';
 
 import {
@@ -156,6 +157,8 @@ const LandingPage = () => {
     const [feed, setFeed] = useState<TFeedState>({ connected: false, markets: null, quotes: {} });
     const [referral_open, setReferralOpen] = useState(false);
     const [logging_in, setLoggingIn] = useState(false);
+    // A login that could not complete left a note behind; show it once.
+    const [login_error, setLoginErrorMessage] = useState<string | null>(() => takeLoginError());
 
     const has_app_id = Boolean(process.env.NEXT_PUBLIC_DERIV_APP_ID);
     // Real customer reviews once added to REVIEWS; the feature highlights until then.
@@ -198,6 +201,7 @@ const LandingPage = () => {
 
     const login = useCallback(async () => {
         setLoggingIn(true);
+        setLoginErrorMessage(null);
         try {
             const url = await generateOAuthURL();
             if (url) window.location.replace(url);
@@ -242,6 +246,20 @@ const LandingPage = () => {
                 </div>
             </header>
             <TopTicker feed={feed} />
+
+            {login_error && (
+                <div className='te-landing__notice' role='alert'>
+                    <span>{login_error}</span>
+                    <button
+                        type='button'
+                        className='te-landing__notice-close'
+                        onClick={() => setLoginErrorMessage(null)}
+                        aria-label='Dismiss'
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
 
             <main className='te-landing__main'>
                 {/* hero */}

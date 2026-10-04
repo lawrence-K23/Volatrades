@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { AuthWrapper } from './app/AuthWrapper';
 // Removed AnalyticsInitializer import - analytics dependency removed
 // See migrate-docs/ANALYTICS_IMPLEMENTATION_GUIDE.md for re-implementation
+import { startFreshBrowserSession } from './utils/auth-session';
 import {
     applyBrandFontFromConfig,
     applyDocumentTitle,
@@ -17,6 +18,11 @@ configure({ isolateGlobalState: true });
 
 // Perform version check FIRST - before any other operations
 performVersionCheck();
+
+// A login lasts for this browser session only: if the browser has been closed
+// since the last visit, the stored session is dropped here, before any of the
+// app reads it, and the user is asked to log in again.
+startFreshBrowserSession();
 
 // Apply deploy-time document branding (tab title, favicon, web font, and primary color).
 applyDocumentTitle();

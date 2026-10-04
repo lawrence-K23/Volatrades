@@ -7,6 +7,7 @@ import { api_base } from '@/external/bot-skeleton';
 import { getAuthInfo } from '@/external/deriv-core';
 import { useApiBase } from '@/hooks/useApiBase';
 import { useStore } from '@/hooks/useStore';
+import { ensureFreshAccessToken, needsTokenRefresh, resolveActiveLoginid } from '@/utils/auth-session';
 import { isPreviewMode } from '@/utils/is-preview-mode';
 import { useDevice } from '@deriv-com/ui';
 import LandingPage from '../landing/LandingPage';
@@ -32,10 +33,16 @@ const isLocalDevBypass = () => {
     return is_local && !new URLSearchParams(window.location.search).has('landing');
 };
 
-/** A stored, unexpired Deriv OAuth session. */
+/**
+ * A stored, unexpired Deriv OAuth session.
+ *
+ * The active loginid is repaired from the stored account list when it is
+ * missing: a login whose token landed but whose account request failed used to
+ * count as no session at all and sent the user back to the landing page.
+ */
 const hasStoredSession = () => {
     try {
-        return Boolean(getAuthInfo()?.access_token) && Boolean(localStorage.getItem('active_loginid'));
+        return Boolean(getAuthInfo()?.access_token) && Boolean(resolveActiveLoginid());
     } catch {
         return false;
     }
@@ -55,6 +62,30 @@ const Layout = observer(() => {
         }
     });
     const [oauthPending, setOauthPending] = useState(() => new URLSearchParams(window.location.search).has('code'));
+
+    // A spent access token is renewed before the gate judges the session, so a
+    // user whose token simply timed out is not shown the landing page.
+    const [sessionRenewing, setSessionRenewing] = useState(() => needsTokenRefresh());
+
+    useEffect(() => {
+        if (!sessionRenewing) return undefined;
+        let cancelled = false;
+        ensureFreshAccessToken().finally(() => {
+            if (!cancelled) setSessionRenewing(false);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [sessionRenewing]);
+
+    // And again while the session is in use, so a long day of trading does not
+    // end with a sudden trip to the landing page.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (needsTokenRefresh()) ensureFreshAccessToken();
+        }, 60000);
+        return () => clearInterval(timer);
+    }, []);
 
     const finishSplash = useCallback(() => {
         try {
@@ -211,8 +242,8 @@ const Layout = observer(() => {
 
     // Login gate: the tools are only reachable with a Deriv session.
     if (!isCallbackPage && !isPreviewMode()) {
-        if (!splashDone || oauthPending) {
-            return <SplashScreen onDone={finishSplash} hold={oauthPending} />;
+        if (!splashDone || oauthPending || sessionRenewing) {
+            return <SplashScreen onDone={finishSplash} hold={oauthPending || sessionRenewing} />;
         }
         const logged_in = Boolean(activeLoginid) || hasStoredSession();
         if (!logged_in && !isLocalDevBypass()) return <LandingPage />;

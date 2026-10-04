@@ -94,7 +94,7 @@ const ManualTrader = observer(() => {
     const stopTicks = useCallback(() => {
         try {
             if (tick_sub_id.current) {
-                api_base?.api?.forget?.({ forget: tick_sub_id.current });
+                api_base?.api?.send({ forget: tick_sub_id.current });
                 tick_sub_id.current = null;
             }
             if (tick_listener.current) {
@@ -235,7 +235,7 @@ const ManualTrader = observer(() => {
                     if (settled) return;
                     settled = true;
                     try {
-                        if (sub_id) api_base?.api?.forget?.({ forget: sub_id });
+                        if (sub_id) api_base?.api?.send({ forget: sub_id });
                         api_base?.api?.connection?.removeEventListener('message', onMessage);
                     } catch {
                         /* nothing to clean up */
