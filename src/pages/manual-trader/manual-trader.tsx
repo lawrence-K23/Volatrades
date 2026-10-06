@@ -22,6 +22,8 @@ import Text from '@/components/shared_ui/text';
 import { contract_stages } from '@/constants/contract-stage';
 import { api_base } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
+import ChartWrapper from '@/pages/chart/chart-wrapper';
+import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
 import { localize } from '@deriv-com/translations';
 import './manual-trader.scss';
 
@@ -42,7 +44,7 @@ const clampDigit = (value: number) => Math.max(0, Math.min(9, Math.trunc(Number(
 
 const ManualTrader = observer(() => {
     const store = useStore();
-    const { run_panel, transactions, client } = store;
+    const { run_panel, transactions, client, chart_store } = store;
 
     const tick_sub_id = useRef<string | null>(null);
     const tick_listener = useRef<((evt: MessageEvent) => void) | null>(null);
@@ -143,12 +145,43 @@ const ManualTrader = observer(() => {
 
         (async () => {
             try {
-                const { active_symbols } = await send({ active_symbols: 'brief' });
-                const synthetic = (active_symbols || [])
-                    .filter((s: any) => /synthetic/i.test(s.market) || /^(R_|1HZ)/.test(s.symbol))
-                    .map((s: any) => ({ symbol: s.symbol, display_name: s.display_name }));
+                /**
+                 * The market list came back empty because it was read with the
+                 * old field names: the Options API calls them
+                 * `underlying_symbol` and `underlying_symbol_name`, so
+                 * `s.symbol` was undefined and the filter matched nothing.
+                 *
+                 * The analysis loader already reads both spellings, asks Deriv
+                 * itself when api_base has nothing, and caches the answer - so
+                 * the markets are here on arrival rather than after a wait.
+                 */
+                let synthetic: TSymbol[] = (await getVolatilitySymbols()).map(item => ({
+                    symbol: item.symbol,
+                    display_name: item.display_name,
+                }));
+
+                if (!synthetic.length) {
+                    const { active_symbols } = await send({ active_symbols: 'brief' });
+                    synthetic = (active_symbols || [])
+                        .map((s: any) => ({
+                            symbol: s.underlying_symbol || s.symbol || '',
+                            display_name:
+                                s.display_name || s.underlying_symbol_name || s.underlying_symbol || s.symbol || '',
+                            market: s.market ?? '',
+                        }))
+                        .filter(
+                            (s: any) =>
+                                !!s.symbol &&
+                                !!s.display_name &&
+                                (/^(R_|1HZ)/.test(s.symbol) ||
+                                    /synthetic/i.test(s.market) ||
+                                    /volatility/i.test(s.display_name))
+                        )
+                        .map(({ symbol: sym, display_name }: any) => ({ symbol: sym, display_name }));
+                }
 
                 if (!is_mounted.current) return;
+                if (!synthetic.length) throw new Error(localize('Deriv returned no volatility markets.'));
                 setSymbols(synthetic);
 
                 const first = synthetic[0]?.symbol;
@@ -369,6 +402,25 @@ const ManualTrader = observer(() => {
         say(localize('Stopping after this contract…'));
     }, [say]);
 
+    // The Deriv chart beside the panel shows the market being traded, and its
+    // own market picker works the other way round: whichever is changed, both
+    // follow. The guards stop the two from chasing each other.
+    useEffect(() => {
+        if (!symbol) return;
+        if (chart_store?.symbol === symbol) return;
+        chart_store?.onSymbolChange?.(symbol);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [symbol]);
+
+    useEffect(() => {
+        const from_chart = chart_store?.symbol;
+        if (!from_chart || from_chart === symbol) return;
+        if (!symbols.some(item => item.symbol === from_chart)) return;
+        setSymbol(from_chart);
+        startTicks(from_chart);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chart_store?.symbol, symbols]);
+
     const shows_match_prediction = trade_type === 'DIGITMATCH' || trade_type === 'DIGITDIFF';
     const shows_over_under = trade_type === 'DIGITOVER' || trade_type === 'DIGITUNDER';
     const busy = is_buying || is_running;
@@ -377,7 +429,13 @@ const ManualTrader = observer(() => {
 
     return (
         <div className='manual-trader'>
-            <div className='manual-trader__container'>
+            <div className='manual-trader__layout'>
+                {/* The platform's own chart, the same one the Charts tab uses. */}
+                <div className='manual-trader__chart'>
+                    <ChartWrapper prefix='manual-trader' show_digits_stats={false} />
+                </div>
+
+                <div className='manual-trader__container'>
                 <div className='manual-trader__topbar'>
                     <div className='manual-trader__title'>{localize('Manual Trader')}</div>
                     <div className='manual-trader__balance'>
@@ -565,6 +623,7 @@ const ManualTrader = observer(() => {
                             </Text>
                         </div>
                     )}
+                    </div>
                 </div>
             </div>
         </div>

@@ -13,12 +13,57 @@
         box-sizing: border-box;
     }
 
+    // Chart on the left, trade panel on the right - the way a trading screen
+    // reads. On a phone the chart sits above the panel at a fixed height, so
+    // both are usable without one squeezing the other out.
+    &__layout {
+        display: flex;
+        align-items: stretch;
+        width: 100%;
+        min-height: 0;
+        flex: 1 1 auto;
+
+        @media (max-width: 1023px) {
+            flex-direction: column;
+        }
+    }
+
+    &__chart {
+        position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 42rem;
+        border-inline-end: 1px solid var(--border-normal);
+
+        // The chart measures itself against its container, so it needs one
+        // with a height of its own rather than one that grows to fit it.
+        .dc-chart,
+        .smartcharts {
+            height: 100%;
+        }
+
+        @media (max-width: 1023px) {
+            flex: 0 0 auto;
+            height: 34rem;
+            min-height: 34rem;
+            border-inline-end: 0;
+            border-bottom: 1px solid var(--border-normal);
+        }
+    }
+
     &__container {
         display: flex;
         flex-direction: column;
         gap: 1.6rem;
         padding: 2rem;
         width: 100%;
+        overflow-y: auto;
+
+        @media (min-width: 1024px) {
+            flex: 0 0 44rem;
+            width: 44rem;
+            max-width: 44rem;
+        }
 
         @media (max-width: 767px) {
             padding: 1.2rem 1rem 8rem;

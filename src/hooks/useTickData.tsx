@@ -1,5 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api_base } from '@/external/bot-skeleton';
+// Imported from the module rather than the analysis barrel: the barrel also
+// pulls in the bot-builder hand-off, which this provider has no business
+// dragging into the app's first chunk.
+import { getAnalysisSymbols } from '@/utils/analysis/deriv-market-data';
 
 export type TTickData = {
     quoteStr: string;
@@ -101,6 +105,18 @@ const waitForApiReady = (maxAttempts = 60, intervalMs = 250): Promise<void> => {
     });
 };
 
+/**
+ * The market list, kept for the life of the page.
+ *
+ * Every screen that reads this provider - Bulk Trader, Speedbot - showed an
+ * empty market box until api_base had fetched active_symbols, which is a wait
+ * of seconds and sometimes a failure ("Active symbols fetch timeout"). The
+ * Analysis Tool never had that problem because its own loader keeps a cache
+ * like this one and asks Deriv directly when api_base comes up empty. Same
+ * treatment here, so those screens open with their markets already in place.
+ */
+let symbols_cache: TActiveSymbol[] = [];
+
 const waitForActiveSymbols = (maxAttempts = 40, intervalMs = 300): Promise<void> => {
     return new Promise((resolve, reject) => {
         let attempts = 0;
@@ -189,7 +205,8 @@ const buildCircleDataSpec = (ticks: TTickData[]): TCircleDatum[] => {
 };
 
 export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [availableSymbols, setAvailableSymbols] = useState<TActiveSymbol[]>([]);
+    // Start from the last known market list rather than an empty box.
+    const [availableSymbols, setAvailableSymbols] = useState<TActiveSymbol[]>(symbols_cache);
     const [selectedSymbol, setSelectedSymbolState] = useState<string>(DEFAULT_SYMBOL);
     const [tickLimit, setTickLimitState] = useState<number>(DEFAULT_TICK_LIMIT);
     const [ticksBuffer, setTicksBuffer] = useState<TTickData[]>([]);
@@ -209,7 +226,7 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const symbolChangeNonceRef = useRef(0);
     const lastTickEpochRef = useRef<number>(0);
     const connectionStatusRef = useRef(false);
-    const availableSymbolsRef = useRef<TActiveSymbol[]>([]);
+    const availableSymbolsRef = useRef<TActiveSymbol[]>(symbols_cache);
     const liveTickingForSymbolRef = useRef<string | null>(null);
     const tickSubscriptionIdRef = useRef<string | null>(null);
 
@@ -367,8 +384,31 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                           : undefined;
                     return { symbol, display_name, pip_size, market: s.market, submarket: s.submarket };
                 });
-                const symbols = rawSymbols.filter(s => !!s.symbol && !!s.display_name);
+                let symbols = rawSymbols.filter(s => !!s.symbol && !!s.display_name);
+
+                // api_base came up empty or timed out. Ask Deriv ourselves, the
+                // way the Analysis Tool's loader does - it polls api_base first
+                // and then sends its own active_symbols request, so this both
+                // fills the list and shares its cache.
+                if (!symbols.length) {
+                    try {
+                        const fallback = await getAnalysisSymbols();
+                        symbols = fallback
+                            .filter(s => !!s.symbol && !!s.display_name)
+                            .map(s => ({
+                                symbol: s.symbol,
+                                display_name: s.display_name,
+                                pip_size: Number.isFinite(s.decimals) ? s.decimals : undefined,
+                                market: s.market,
+                                submarket: s.submarket,
+                            }));
+                    } catch (_) {
+                        /* nothing more to try; the error below is reported */
+                    }
+                }
+
                 if (!mounted) return;
+                if (symbols.length) symbols_cache = symbols;
                 availableSymbolsRef.current = symbols;
                 setAvailableSymbols(symbols);
 
@@ -389,16 +429,27 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     if (isMountedRef.current) setCurrentPipSize(finalPip);
                 }
 
-                symbolChangeNonceRef.current += 1;
-                liveTickingForSymbolRef.current = null;
-                selectedSymbolRef.current = finalSymbol;
-                if (isMountedRef.current) {
-                    setSelectedSymbolState('');
-                    queueMicrotask(() => { if (isMountedRef.current) setSelectedSymbolState(finalSymbol); });
+                // Only restart the stream if the market actually changed. The
+                // blank-then-set dance below re-runs the seeding effect, which
+                // empties the tick buffer first - so doing it for the market we
+                // are already streaming left every screen that reads this
+                // provider briefly blank for no reason.
+                if (finalSymbol !== currentSel) {
+                    symbolChangeNonceRef.current += 1;
+                    liveTickingForSymbolRef.current = null;
+                    selectedSymbolRef.current = finalSymbol;
+                    if (isMountedRef.current) {
+                        setSelectedSymbolState('');
+                        queueMicrotask(() => {
+                            if (isMountedRef.current) setSelectedSymbolState(finalSymbol);
+                        });
+                    }
                 }
             } catch (_err: any) {
                 if (!mounted) return;
-                setAvailableSymbols([]);
+                // Keep whatever list we already had: an empty market box is
+                // worse than a slightly stale one.
+                if (!symbols_cache.length) setAvailableSymbols([]);
                 setConnectionError(_err?.message || 'Failed to load markets');
             }
         };
