@@ -8,6 +8,7 @@ export type TNavIconName =
     | 'charts'
     | 'tutorials'
     | 'free-bots'
+    | 'speedbot'
     | 'analysis-tool'
     | 'scanner'
     | 'auto-trader'
@@ -54,6 +55,15 @@ const PATHS: Record<TNavIconName, JSX.Element> = {
             <circle cx='6' cy='17' r='3' />
             <circle cx='18' cy='17' r='3' />
             <path d='M10.5 8.6 7.5 14.4M13.5 8.6l3 5.8M9 17h6' />
+        </>
+    ),
+    // A speedometer: the dial, its needle, and the sweep of the gauge.
+    speedbot: (
+        <>
+            <path d='M3.5 17a9 9 0 1 1 17 0' />
+            <path d='M12 17l4.2-5.2' />
+            <circle cx='12' cy='17' r='1.4' />
+            <path d='M3.5 17h3M17.5 17h3' />
         </>
     ),
     'analysis-tool': (

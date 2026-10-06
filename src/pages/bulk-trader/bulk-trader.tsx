@@ -202,7 +202,7 @@ const BulkTrader = () => {
                     'journal__text'
                 );
                 ourContracts.current.delete(id);
-                if (data.subscription?.id) (api_base.api as any)?.forget(data.subscription.id);
+                if (data.subscription?.id) api_base.api?.send({ forget: data.subscription.id });
             }
         });
         return () => subscription.unsubscribe();

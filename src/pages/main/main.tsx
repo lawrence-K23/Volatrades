@@ -44,6 +44,7 @@ import './main.scss';
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
 const Tutorial = lazy(() => import('../tutorials'));
 const FreeBots = lazy(() => import('../free-bots'));
+const Speedbot = lazy(() => import('../speedbot'));
 const AnalysisTool = lazy(() => import('../analysis-tool'));
 const Scanner = lazy(() => import('../scanner'));
 const AutoTrader = lazy(() => import('../auto-trader'));
@@ -94,6 +95,7 @@ const AppWrapper = observer(() => {
         'chart',
         'tutorial',
         'free_bots',
+        'speedbot',
         'auto_trader',
         'analysis_tool',
         'scanner',
@@ -488,6 +490,25 @@ const AppWrapper = observer(() => {
                                         }
                                     >
                                         <FreeBots />
+                                    </Suspense>
+                                </div>
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <NavIcon name='speedbot' />
+                                        <Localize i18n_default_text='Speedbot' />
+                                    </>
+                                }
+                                id='id-speedbot'
+                            >
+                                <div className='main__tab-panel'>
+                                    <Suspense
+                                        fallback={
+                                            <ChunkLoader message={localize('Please wait, loading speedbot...')} />
+                                        }
+                                    >
+                                        <Speedbot />
                                     </Suspense>
                                 </div>
                             </div>

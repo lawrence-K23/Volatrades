@@ -1,0 +1,326 @@
+@use 'components/shared/styles/mixins' as *;
+
+// Laid out to match the reference screen: a start button beside the speed
+// switch, the market and its price, the trade type, four numbers in a row, the
+// paired switches, then the martingale and recovery lines over the stats strip.
+.speedbot {
+    --sb-surface: var(--general-main-1, #ffffff);
+    --sb-page: var(--general-section-1, #f5f7fa);
+    --sb-border: var(--general-border, #e3e8ef);
+    --sb-text: var(--text-general, #0f172a);
+    --sb-muted: var(--text-less-prominent, #7b8698);
+    --sb-accent: #0f9b8e;
+    --sb-hot: #f1603c;
+
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    background: var(--sb-page);
+    color: var(--sb-text);
+    font-size: 1.3rem;
+
+    * {
+        box-sizing: border-box;
+    }
+
+    &__inner {
+        display: flex;
+        flex-direction: column;
+        gap: 1.6rem;
+        padding: 1.6rem 2rem 8rem; // room for the floating run bar
+    }
+
+    &__title {
+        margin: 0;
+        text-align: center;
+        font-size: 1.8rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
+    /* ------------------------------------------------ start + speed */
+
+    &__runrow {
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        border: 1px solid var(--sb-border);
+        border-radius: 0.4rem;
+        overflow: hidden;
+        background: var(--sb-surface);
+    }
+
+    &__start {
+        flex: 0 0 11rem;
+        border: 0;
+        background: var(--sb-accent);
+        color: #ffffff;
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+
+        &:hover {
+            filter: brightness(1.06);
+        }
+
+        &--stop {
+            background: #d1403c;
+        }
+    }
+
+    &__speed {
+        position: relative;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding-top: 1.6rem;
+        background: var(--sb-page);
+    }
+
+    &__speed-label {
+        position: absolute;
+        top: 0.2rem;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--sb-muted);
+    }
+
+    &__speed-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        height: 2.8rem;
+    }
+
+    &__speed-option {
+        border: 0;
+        background: #eef1f6;
+        color: var(--sb-muted);
+        font-size: 1.2rem;
+        font-weight: 700;
+        cursor: pointer;
+
+        &--active {
+            background: var(--sb-hot);
+            color: #ffffff;
+        }
+    }
+
+    /* ------------------------------------------------ inputs */
+
+    &__market {
+        display: flex;
+        align-items: center;
+        gap: 1.2rem;
+    }
+
+    &__select {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 4rem;
+        padding: 0 1.2rem;
+        border: 1px solid var(--sb-border);
+        border-radius: 0.4rem;
+        background: var(--sb-surface);
+        color: var(--sb-text);
+        font-size: 1.3rem;
+        appearance: none;
+
+        &--block {
+            width: 100%;
+            flex: 0 0 auto;
+        }
+    }
+
+    &__price {
+        flex: 0 0 auto;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--sb-hot);
+        font-variant-numeric: tabular-nums;
+    }
+
+    &__fields {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1.6rem;
+
+        @include mobile-or-tablet-screen {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1.2rem;
+        }
+    }
+
+    &__field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        min-width: 0;
+
+        input {
+            width: 100%;
+            height: 4rem;
+            padding: 0 1.2rem;
+            border: 1px solid var(--sb-border);
+            border-radius: 0.4rem;
+            background: var(--sb-surface);
+            color: var(--sb-text);
+            font-size: 1.3rem;
+        }
+    }
+
+    &__field-label {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--sb-muted);
+    }
+
+    /* ------------------------------------------------ switches */
+
+    &__switch-pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.6rem;
+
+        @include mobile-or-tablet-screen {
+            grid-template-columns: 1fr;
+            gap: 1.2rem;
+        }
+    }
+
+    &__card-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.2rem;
+        min-width: 0;
+        padding: 1.4rem 1.6rem;
+        border: 1px solid var(--sb-border);
+        border-radius: 0.6rem;
+        background: var(--sb-surface);
+    }
+
+    &__card-label {
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+
+    &__line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.2rem;
+        padding: 1.2rem 0;
+        border-bottom: 1px solid var(--sb-border);
+    }
+
+    &__line-label {
+        font-size: 1.3rem;
+        font-weight: 700;
+
+        &--accent {
+            color: var(--sb-accent);
+            font-weight: 600;
+        }
+    }
+
+    &__number {
+        width: 8rem;
+        height: 3.2rem;
+        padding: 0 0.8rem;
+        border: 1px solid var(--sb-border);
+        border-radius: 0.4rem;
+        background: var(--sb-surface);
+        color: var(--sb-text);
+        font-size: 1.3rem;
+        text-align: center;
+    }
+
+    // The pill switches: grey when off, orange when on, as in the reference.
+    &__switch {
+        position: relative;
+        flex: 0 0 auto;
+        width: 4.4rem;
+        height: 2.2rem;
+        padding: 0;
+        border: 0;
+        border-radius: 1.1rem;
+        background: #d3d9e2;
+        cursor: pointer;
+        transition: background 160ms ease;
+
+        &--on {
+            background: var(--sb-hot);
+        }
+    }
+
+    &__switch-knob {
+        position: absolute;
+        top: 0.3rem;
+        left: 0.3rem;
+        width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 50%;
+        background: #6b7688;
+        transition:
+            transform 160ms ease,
+            background 160ms ease;
+
+        .speedbot__switch--on & {
+            transform: translateX(2.2rem);
+            background: #ffffff;
+        }
+    }
+
+    /* ------------------------------------------------ readouts */
+
+    &__stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.2rem;
+        padding: 1.4rem 1.6rem;
+        border: 1px solid var(--sb-border);
+        border-radius: 0.6rem;
+        background: var(--sb-surface);
+        color: var(--sb-muted);
+        font-size: 1.3rem;
+        font-weight: 600;
+
+        span:nth-child(2) {
+            text-align: center;
+        }
+
+        span:last-child {
+            text-align: end;
+        }
+
+        @include mobile-or-tablet-screen {
+            grid-template-columns: 1fr;
+
+            span {
+                text-align: start !important;
+            }
+        }
+    }
+
+    &__status {
+        padding: 1rem 1.4rem;
+        border: 1px solid var(--sb-border);
+        border-radius: 0.6rem;
+        background: var(--sb-surface);
+        color: var(--sb-muted);
+        font-size: 1.2rem;
+        font-weight: 600;
+
+        &--error {
+            border-color: #fca5a5;
+            background: #fef2f2;
+            color: #991b1b;
+        }
+    }
+}
