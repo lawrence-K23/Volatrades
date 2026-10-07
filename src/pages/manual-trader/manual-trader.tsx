@@ -19,6 +19,7 @@ import ChartWrapper from '@/pages/chart/chart-wrapper';
 import { getContractTypes } from '@/utils/analysis/deriv-market-data';
 import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
 import { localize } from '@deriv-com/translations';
+import DigitCircles from './digit-circles';
 import OpenPositions from './open-positions';
 import { byId, type TTradeTypeId } from './trade-types';
 import TradeTypeIcon from './trade-type-icon';
@@ -309,7 +310,10 @@ const ManualTrader = observer(() => {
                  * would just stack two of them.
                  */}
                 <main className='mt-grid__chart'>
-                    <ChartWrapper prefix='manual-trader' show_digits_stats={shows_digit_stats} />
+                    {/* The chart's built-in digit stats are bars; Deriv's trader
+                        draws circles, so those are drawn over the chart here. */}
+                    <ChartWrapper prefix='manual-trader' show_digits_stats={false} />
+                    {shows_digit_stats && symbol && <DigitCircles symbol={symbol} />}
                 </main>
 
                 <aside className='mt-grid__panel'>
@@ -374,15 +378,22 @@ const ManualTrader = observer(() => {
                     {field('duration') && (
                         <div className='mt-panel__block'>
                             <div className='mt-panel__boxed'>{localize('Ticks')}</div>
-                            <input
-                                className='mt-panel__slider'
-                                type='range'
-                                min={1}
-                                max={MAX_TICKS}
-                                value={duration}
-                                onChange={event => setDuration(Number(event.target.value))}
-                                aria-label={localize('Ticks')}
-                            />
+                            {/* Deriv's tick picker: a dot per tick on a line. */}
+                            <div className='mt-ticks' role='radiogroup' aria-label={localize('Ticks')}>
+                                {Array.from({ length: MAX_TICKS }, (_, index) => index + 1).map(count => (
+                                    <button
+                                        key={count}
+                                        type='button'
+                                        role='radio'
+                                        aria-checked={count === duration}
+                                        aria-label={`${count} ${count === 1 ? localize('Tick') : localize('Ticks')}`}
+                                        className={`mt-ticks__dot ${
+                                            count === duration ? 'mt-ticks__dot--current' : ''
+                                        }`}
+                                        onClick={() => setDuration(count)}
+                                    />
+                                ))}
+                            </div>
                             <div className='mt-panel__slider-value'>
                                 {duration} {duration === 1 ? localize('Tick') : localize('Ticks')}
                             </div>
@@ -467,6 +478,7 @@ const ManualTrader = observer(() => {
                                 onChange={event => setStake(event.target.value)}
                                 aria-label={localize('Stake')}
                             />
+                            <span className='mt-panel__currency'>{currency}</span>
                             <button
                                 type='button'
                                 className='mt-panel__step'
@@ -573,7 +585,12 @@ const ManualTrader = observer(() => {
                                 <div key={side.contract_type} className='mt-panel__cta-wrap'>
                                     {!is_single && !shows_amount && (
                                         <div className='mt-panel__payout'>
-                                            {localize('Payout')} {money(price?.payout ?? null, currency)}
+                                            <span>
+                                                {localize('Payout')} <b>{money(price?.payout ?? null, currency)}</b>
+                                            </span>
+                                            <span className='mt-panel__info' aria-hidden='true'>
+                                                i
+                                            </span>
                                         </div>
                                     )}
                                     <button

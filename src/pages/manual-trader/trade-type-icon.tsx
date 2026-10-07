@@ -2,7 +2,6 @@
  * Deriv's own trade-type icons, from @deriv/quill-icons - the set their trader
  * draws in its menu and on its buy buttons - keyed by contract type.
  */
-import type { ComponentType } from 'react';
 import {
     TradeTypesAccumulatorStayInIcon,
     TradeTypesDigitsDiffersIcon,
@@ -26,7 +25,8 @@ import {
 } from '@deriv/quill-icons/TradeTypes';
 import type { TTradeTypeId } from './trade-types';
 
-type TIcon = ComponentType<{ iconSize?: 'xs' | 'sm' | 'md'; className?: string }>;
+// Every icon in the set shares one type; borrow it rather than describe it.
+type TIcon = typeof TradeTypesDigitsEvenIcon;
 
 /** By contract type, for the buy buttons. */
 const BY_CONTRACT: Record<string, TIcon> = {
