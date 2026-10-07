@@ -378,11 +378,22 @@ const ManualTrader = observer(() => {
 
     return (
         <div className='manual-trader'>
-            {/* The spinner the trader opened with before - same ring, same words. */}
+            {/* Deriv's own opening loader, as deriv-dtrader.vercel.app shows it. */}
             {!is_ready && (
-                <div className='manual-trader__loading' role='status' aria-live='polite'>
-                    <span className='manual-trader__spinner' aria-hidden='true' />
-                    <span className='manual-trader__loading-text'>{localize('Loading trader…')}</span>
+                <div className='manual-trader__loading'>
+                    <div className='manual-trader__pulse' role='status' aria-live='polite'>
+                        <div className='manual-trader__bars' aria-hidden='true'>
+                            <span />
+                            <span />
+                            <span />
+                            <span />
+                            <span />
+                        </div>
+                        <h1 className='manual-trader__loading-title'>{localize('Opening your trading desk')}</h1>
+                        <p className='manual-trader__loading-quote'>
+                            {localize('Plan the trade. Let the price come to you.')}
+                        </p>
+                    </div>
                 </div>
             )}
 
