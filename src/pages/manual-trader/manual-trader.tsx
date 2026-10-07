@@ -1,97 +1,96 @@
 /**
- * Manual Trader.
+ * Manual Trader, laid out as Deriv's own trader is.
  *
- * A trade panel inside the site, on the Deriv API - the shape the bossiousfx
- * project uses for its Smart Trader (MIT, deriv.com): pick a volatility index
- * and a digit trade type, watch the last digits stream in, and buy. No frame
- * and no redirect, so the session is ours and the account is the one this site
- * is signed in as.
+ * Three columns: open positions on the left, the platform chart in the middle
+ * with the market chip over it, and the trade panel on the right - trade type
+ * at the top, its own inputs under it, and the two priced buttons at the
+ * bottom. Prices are subscribed `proposal` quotes, so the payout and the
+ * percentage on each button move with the market, and a purchase is placed
+ * against the quoted proposal id, which is what the platform itself does.
  *
- * Three faults in that original are not carried over:
- *  - its "Trade once" button started the same endless loop as auto trading, so
- *    it could never buy a single contract;
- *  - the loop bought again 500ms later whether or not the contract had settled;
- *  - it raised the stake with setStake() and then read the previous value from
- *    the render closure, so a martingale step never reached the buy.
- * Here one purchase is one purchase, auto trading waits for each contract to
- * close, and the stake is read from a ref.
+ * Automation is deliberately not here: Auto Trader and Speedbot are the
+ * screens for that. This one buys one contract when a button is pressed.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import Text from '@/components/shared_ui/text';
-import { contract_stages } from '@/constants/contract-stage';
-import { api_base } from '@/external/bot-skeleton';
+import { api_base, MessageTypes } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import ChartWrapper from '@/pages/chart/chart-wrapper';
+import { getContractTypes } from '@/utils/analysis/deriv-market-data';
 import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
 import { localize } from '@deriv-com/translations';
+import OpenPositions from './open-positions';
+import { byId, type TTradeTypeId } from './trade-types';
+import TradeTypesMenu from './trade-types-menu';
+import useProposal, { type TProposalInputs } from './use-proposal';
 import './manual-trader.scss';
 
 type TSymbol = { symbol: string; display_name: string };
 
-const TRADE_TYPES = [
-    { value: 'DIGITOVER', label: localize('Digits Over') },
-    { value: 'DIGITUNDER', label: localize('Digits Under') },
-    { value: 'DIGITEVEN', label: localize('Even') },
-    { value: 'DIGITODD', label: localize('Odd') },
-    { value: 'DIGITMATCH', label: localize('Matches') },
-    { value: 'DIGITDIFF', label: localize('Differs') },
-];
+const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+const GROWTH_RATES = [0.01, 0.02, 0.03, 0.04, 0.05];
+const MULTIPLIERS = [100, 200, 300, 400, 500];
+const MAX_TICKS = 10;
+const DIGIT_TYPES: TTradeTypeId[] = ['matches_differs', 'even_odd', 'over_under'];
 
-const NEEDS_BARRIER = ['DIGITOVER', 'DIGITUNDER', 'DIGITMATCH', 'DIGITDIFF'];
+const money = (value: number | null, currency: string) =>
+    value === null ? '--' : `${value.toFixed(2)} ${currency}`;
 
-const clampDigit = (value: number) => Math.max(0, Math.min(9, Math.trunc(Number(value) || 0)));
+const percent = (value: number | null) => (value === null ? '--' : `${value.toFixed(2)}%`);
 
 const ManualTrader = observer(() => {
     const store = useStore();
-    const { run_panel, transactions, client, chart_store } = store;
+    const { client, chart_store, journal } = store;
+    const currency = client?.currency || 'USD';
 
     const tick_sub_id = useRef<string | null>(null);
     const tick_listener = useRef<((evt: MessageEvent) => void) | null>(null);
-    const stop_requested = useRef(false);
     const is_mounted = useRef(true);
-    // Read at purchase time rather than through a render closure.
-    const stake_ref = useRef(0.5);
-    const after_loss = useRef(false);
 
     const [symbols, setSymbols] = useState<TSymbol[]>([]);
     const [symbol, setSymbol] = useState('');
-    const [trade_type, setTradeType] = useState('DIGITOVER');
-    const [ticks, setTicks] = useState(1);
-    const [stake, setStake] = useState(0.5);
-    const [prediction, setPrediction] = useState(5);
-    const [prediction_after_loss, setPredictionAfterLoss] = useState(5);
-    const [martingale, setMartingale] = useState(1);
+    const [quote, setQuote] = useState<{ value: number; first: number } | null>(null);
 
-    const [digits, setDigits] = useState<number[]>([]);
-    const [last_digit, setLastDigit] = useState<number | null>(null);
-    const [wins, setWins] = useState(0);
-    const [losses, setLosses] = useState(0);
+    const [trade_type_id, setTradeTypeId] = useState<TTradeTypeId>('even_odd');
+    const [available, setAvailable] = useState<string[] | null>(null);
+    const [types_open, setTypesOpen] = useState(false);
+    const [market_open, setMarketOpen] = useState(false);
+    const [market_search, setMarketSearch] = useState('');
 
-    const [is_running, setIsRunning] = useState(false);
-    const [is_buying, setIsBuying] = useState(false);
-    const [status, setStatus] = useState('');
+    const [duration, setDuration] = useState(1);
+    const [digit, setDigit] = useState(2);
+    const [stake, setStake] = useState('100');
+    const [basis, setBasis] = useState<'stake' | 'payout'>('stake');
+    const [growth_rate, setGrowthRate] = useState(0.03);
+    const [multiplier, setMultiplier] = useState(400);
+    const [barrier_offset, setBarrierOffset] = useState('+0.10');
+    const [take_profit, setTakeProfit] = useState<string>('');
+    const [use_take_profit, setUseTakeProfit] = useState(false);
+    const [stop_loss, setStopLoss] = useState<string>('');
+    const [use_stop_loss, setUseStopLoss] = useState(false);
+    const [deal_cancellation, setDealCancellation] = useState(false);
+
+    const [status, setStatus] = useState<string | null>(null);
     const [is_error, setIsError] = useState(false);
+    const [buying, setBuying] = useState<number | null>(null);
 
-    useEffect(() => {
-        stake_ref.current = stake;
-    }, [stake]);
+    const trade_type = byId(trade_type_id);
+    const shows_digit_stats = DIGIT_TYPES.includes(trade_type_id);
 
-    const currency = client?.currency || 'USD';
-
-    const say = useCallback((message: string, error = false) => {
+    const say = useCallback((message: string | null, error = false) => {
         if (!is_mounted.current) return;
         setStatus(message);
         setIsError(error);
     }, []);
 
-    /** Our own socket, already authorised for the signed-in account. */
     const send = useCallback(async (request: Record<string, unknown>) => {
         if (!api_base?.api) throw new Error(localize('Not connected to Deriv yet. Please try again.'));
         const response: any = await api_base.api.send(request);
         if (response?.error) throw new Error(response.error.message || response.error.code);
         return response;
     }, []);
+
+    /* ------------------------------------------------------------ ticks */
 
     const stopTicks = useCallback(() => {
         try {
@@ -111,21 +110,31 @@ const ManualTrader = observer(() => {
     const startTicks = useCallback(
         async (next_symbol: string) => {
             stopTicks();
-            setDigits([]);
-            setLastDigit(null);
+            setQuote(null);
+
             if (!next_symbol) return;
 
             try {
-                const response = await send({ ticks: next_symbol, subscribe: 1 });
-                if (response?.subscription?.id) tick_sub_id.current = response.subscription.id;
+                const history = await send({
+                    ticks_history: next_symbol,
+                    end: 'latest',
+                    count: 60,
+                    style: 'ticks',
+                });
+                const prices: number[] = (history?.history?.prices || []).map(Number);
+                if (prices.length && is_mounted.current) {
+                    setQuote({ value: prices[prices.length - 1], first: prices[0] });
+                }
+
+                const stream = await send({ ticks: next_symbol, subscribe: 1 });
+                if (stream?.subscription?.id) tick_sub_id.current = String(stream.subscription.id);
 
                 const onMessage = (evt: MessageEvent) => {
                     try {
                         const data = JSON.parse(evt.data as string);
                         if (data?.msg_type !== 'tick' || data?.tick?.symbol !== next_symbol) return;
-                        const digit = Number(String(data.tick.quote).slice(-1));
-                        setLastDigit(digit);
-                        setDigits(prev => [...prev.slice(-9), digit]);
+                        const value = Number(data.tick.quote);
+                        setQuote(previous => ({ value, first: previous?.first ?? value }));
                     } catch {
                         /* a frame we do not care about */
                     }
@@ -139,56 +148,28 @@ const ManualTrader = observer(() => {
         [say, send, stopTicks]
     );
 
-    // Load the volatility indices once, and follow the first one.
+    /* ---------------------------------------------------------- markets */
+
     useEffect(() => {
         is_mounted.current = true;
 
         (async () => {
             try {
-                /**
-                 * The market list came back empty because it was read with the
-                 * old field names: the Options API calls them
-                 * `underlying_symbol` and `underlying_symbol_name`, so
-                 * `s.symbol` was undefined and the filter matched nothing.
-                 *
-                 * The analysis loader already reads both spellings, asks Deriv
-                 * itself when api_base has nothing, and caches the answer - so
-                 * the markets are here on arrival rather than after a wait.
-                 */
-                let synthetic: TSymbol[] = (await getVolatilitySymbols()).map(item => ({
+                // The analysis loader reads both the old and the new field
+                // names, asks Deriv itself when api_base has nothing, and
+                // caches the answer - so the list is here on arrival.
+                const list: TSymbol[] = (await getVolatilitySymbols()).map(item => ({
                     symbol: item.symbol,
                     display_name: item.display_name,
                 }));
 
-                if (!synthetic.length) {
-                    const { active_symbols } = await send({ active_symbols: 'brief' });
-                    synthetic = (active_symbols || [])
-                        .map((s: any) => ({
-                            symbol: s.underlying_symbol || s.symbol || '',
-                            display_name:
-                                s.display_name || s.underlying_symbol_name || s.underlying_symbol || s.symbol || '',
-                            market: s.market ?? '',
-                        }))
-                        .filter(
-                            (s: any) =>
-                                !!s.symbol &&
-                                !!s.display_name &&
-                                (/^(R_|1HZ)/.test(s.symbol) ||
-                                    /synthetic/i.test(s.market) ||
-                                    /volatility/i.test(s.display_name))
-                        )
-                        .map(({ symbol: sym, display_name }: any) => ({ symbol: sym, display_name }));
-                }
-
                 if (!is_mounted.current) return;
-                if (!synthetic.length) throw new Error(localize('Deriv returned no volatility markets.'));
-                setSymbols(synthetic);
+                if (!list.length) throw new Error(localize('Deriv returned no volatility markets.'));
 
-                const first = synthetic[0]?.symbol;
-                if (first) {
-                    setSymbol(first);
-                    startTicks(first);
-                }
+                setSymbols(list);
+                const first = list.find(item => item.symbol === chart_store?.symbol)?.symbol || list[0].symbol;
+                setSymbol(first);
+                void startTicks(first);
             } catch (error) {
                 say(error instanceof Error ? error.message : localize('Could not load markets'), true);
             }
@@ -196,218 +177,36 @@ const ManualTrader = observer(() => {
 
         return () => {
             is_mounted.current = false;
-            stop_requested.current = true;
             stopTicks();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    /** Which digits would win right now, for the colour hints under the form. */
-    const hintFor = (digit: number) => {
-        const active_prediction = after_loss.current ? prediction_after_loss : prediction;
-        if (trade_type === 'DIGITEVEN') return digit % 2 === 0 ? 'is-green' : 'is-red';
-        if (trade_type === 'DIGITODD') return digit % 2 !== 0 ? 'is-green' : 'is-red';
-        if (trade_type === 'DIGITMATCH') return digit === active_prediction ? 'is-green' : 'is-red';
-        if (trade_type === 'DIGITDIFF') return digit !== active_prediction ? 'is-green' : 'is-red';
-        if (trade_type === 'DIGITOVER') {
-            if (digit > active_prediction) return 'is-green';
-            return digit < active_prediction ? 'is-red' : 'is-neutral';
-        }
-        if (trade_type === 'DIGITUNDER') {
-            if (digit < active_prediction) return 'is-green';
-            return digit > active_prediction ? 'is-red' : 'is-neutral';
-        }
-        return '';
-    };
-
-    /** Buy one contract and resolve once it has settled, with its profit. */
-    const buyAndFollow = useCallback(
-        async (amount: number): Promise<number> => {
-            const active_prediction = after_loss.current ? prediction_after_loss : prediction;
-            const parameters: Record<string, unknown> = {
-                amount,
-                basis: 'stake',
-                contract_type: trade_type,
-                currency,
-                duration: Math.max(1, Math.trunc(ticks)),
-                duration_unit: 't',
-                symbol,
-            };
-            if (NEEDS_BARRIER.includes(trade_type)) {
-                parameters.barrier = String(
-                    clampDigit(trade_type === 'DIGITMATCH' || trade_type === 'DIGITDIFF' ? prediction : active_prediction)
-                );
-            }
-
-            const { buy } = await send({ buy: 1, price: amount, parameters });
-            const contract_id = Number(buy?.contract_id);
-            if (!contract_id) throw new Error(localize('The purchase did not return a contract'));
-
-            say(`${localize('Bought')} ${buy?.longcode || trade_type}`);
-            run_panel.setHasOpenContract(true);
-            run_panel.setContractStage(contract_stages.PURCHASE_SENT);
-
-            // Show the row straight away, then follow the contract to settlement.
-            transactions.onBotContractEvent({
-                contract_id,
-                transaction_ids: { buy: buy?.transaction_id },
-                buy_price: buy?.buy_price,
-                currency,
-                contract_type: trade_type,
-                underlying: symbol,
-                display_name: symbols.find(s => s.symbol === symbol)?.display_name || symbol,
-                date_start: Math.floor(Date.now() / 1000),
-                status: 'open',
-            } as never);
-
-            return await new Promise<number>((resolve, reject) => {
-                let sub_id: string | null = null;
-                let settled = false;
-
-                const finish = (profit: number) => {
-                    if (settled) return;
-                    settled = true;
-                    try {
-                        if (sub_id) api_base?.api?.send({ forget: sub_id });
-                        api_base?.api?.connection?.removeEventListener('message', onMessage);
-                    } catch {
-                        /* nothing to clean up */
-                    }
-                    run_panel.setHasOpenContract(false);
-                    run_panel.setContractStage(contract_stages.CONTRACT_CLOSED);
-                    resolve(profit);
-                };
-
-                const onMessage = (evt: MessageEvent) => {
-                    try {
-                        const data = JSON.parse(evt.data as string);
-                        if (data?.msg_type !== 'proposal_open_contract') return;
-                        const contract = data.proposal_open_contract;
-                        if (Number(contract?.contract_id) !== contract_id) return;
-
-                        if (!sub_id && data?.subscription?.id) sub_id = data.subscription.id;
-                        transactions.onBotContractEvent(contract);
-
-                        if (contract?.is_sold || contract?.status === 'sold') finish(Number(contract?.profit || 0));
-                    } catch {
-                        /* a frame we do not care about */
-                    }
-                };
-
-                api_base?.api?.connection?.addEventListener('message', onMessage);
-
-                send({ proposal_open_contract: 1, contract_id, subscribe: 1 })
-                    .then(response => {
-                        if (response?.subscription?.id) sub_id = response.subscription.id;
-                        const contract = response?.proposal_open_contract;
-                        if (contract) {
-                            transactions.onBotContractEvent(contract);
-                            if (contract.is_sold || contract.status === 'sold') {
-                                finish(Number(contract.profit || 0));
-                            }
-                        }
-                    })
-                    .catch(error => {
-                        if (settled) return;
-                        settled = true;
-                        try {
-                            api_base?.api?.connection?.removeEventListener('message', onMessage);
-                        } catch {
-                            /* nothing to clean up */
-                        }
-                        reject(error);
-                    });
-            });
-        },
-        [currency, prediction, prediction_after_loss, run_panel, say, send, symbol, symbols, ticks, trade_type, transactions]
-    );
-
-    /** Record an outcome: streaks, and the stake for a martingale step. */
-    const applyOutcome = useCallback(
-        (profit: number, base_stake: number, step: number) => {
-            if (profit > 0) {
-                after_loss.current = false;
-                setWins(w => w + 1);
-                setLosses(0);
-                stake_ref.current = base_stake;
-                setStake(base_stake);
-                return 0;
-            }
-            after_loss.current = true;
-            setLosses(l => l + 1);
-            setWins(0);
-            const next_step = Math.min(step + 1, 50);
-            const next_stake = Number((base_stake * Math.pow(martingale, next_step)).toFixed(2));
-            stake_ref.current = next_stake;
-            setStake(next_stake);
-            return next_step;
-        },
-        [martingale]
-    );
-
-    const openRunPanel = useCallback(() => {
-        run_panel.toggleDrawer(true);
-        run_panel.setActiveTabIndex(1);
-        run_panel.run_id = `manual-${Date.now()}`;
-        run_panel.setIsRunning(true);
-        run_panel.setContractStage(contract_stages.STARTING);
-    }, [run_panel]);
-
-    const closeRunPanel = useCallback(() => {
-        run_panel.setIsRunning(false);
-        run_panel.setHasOpenContract(false);
-        run_panel.setContractStage(contract_stages.NOT_RUNNING);
-    }, [run_panel]);
-
-    /** One contract, start to settlement. */
-    const tradeOnce = useCallback(async () => {
-        if (is_buying || is_running || !symbol) return;
-        setIsBuying(true);
-        openRunPanel();
-        try {
-            await buyAndFollow(Number(stake_ref.current));
-        } catch (error) {
-            say(error instanceof Error ? error.message : localize('The trade failed'), true);
-        } finally {
-            closeRunPanel();
-            if (is_mounted.current) setIsBuying(false);
-        }
-    }, [buyAndFollow, closeRunPanel, is_buying, is_running, openRunPanel, say, symbol]);
-
-    /** Keep trading, one contract at a time, until stopped. */
-    const startAuto = useCallback(async () => {
-        if (is_buying || is_running || !symbol) return;
-        stop_requested.current = false;
-        setIsRunning(true);
-        openRunPanel();
-
-        const base_stake = Number(stake_ref.current);
-        let step = 0;
-
-        try {
-            while (!stop_requested.current && is_mounted.current) {
-                const profit = await buyAndFollow(Number(stake_ref.current));
-                step = applyOutcome(profit, base_stake, step);
-            }
-        } catch (error) {
-            say(error instanceof Error ? error.message : localize('Auto trading stopped'), true);
-        } finally {
-            closeRunPanel();
-            if (is_mounted.current) setIsRunning(false);
-        }
-    }, [applyOutcome, buyAndFollow, closeRunPanel, is_buying, is_running, openRunPanel, say, symbol]);
-
-    const stopAuto = useCallback(() => {
-        stop_requested.current = true;
-        say(localize('Stopping after this contract…'));
-    }, [say]);
-
-    // The Deriv chart beside the panel shows the market being traded, and its
-    // own market picker works the other way round: whichever is changed, both
-    // follow. The guards stop the two from chasing each other.
+    // Which trade types Deriv actually offers on this market, so the menu shows
+    // what can be traded rather than a fixed list.
     useEffect(() => {
         if (!symbol) return;
-        if (chart_store?.symbol === symbol) return;
+        let cancelled = false;
+
+        (async () => {
+            try {
+                // getContractTypes answers with a Set.
+                const contracts = await getContractTypes(symbol);
+                if (cancelled || !is_mounted.current) return;
+                setAvailable(contracts?.size ? Array.from(contracts) : null);
+            } catch {
+                if (!cancelled) setAvailable(null);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [symbol]);
+
+    // The chart and the panel follow one market, whichever is used to change it.
+    useEffect(() => {
+        if (!symbol || chart_store?.symbol === symbol) return;
         chart_store?.onSymbolChange?.(symbol);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [symbol]);
@@ -417,214 +216,486 @@ const ManualTrader = observer(() => {
         if (!from_chart || from_chart === symbol) return;
         if (!symbols.some(item => item.symbol === from_chart)) return;
         setSymbol(from_chart);
-        startTicks(from_chart);
+        void startTicks(from_chart);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chart_store?.symbol, symbols]);
 
-    const shows_match_prediction = trade_type === 'DIGITMATCH' || trade_type === 'DIGITDIFF';
-    const shows_over_under = trade_type === 'DIGITOVER' || trade_type === 'DIGITUNDER';
-    const busy = is_buying || is_running;
+    /* --------------------------------------------------------- proposals */
 
-    const total_profit = useMemo(() => Number(store?.summary_card?.profit || 0), [store?.summary_card?.profit]);
+    const inputs: TProposalInputs = useMemo(
+        () => ({
+            symbol,
+            currency,
+            basis,
+            stake: Number(stake) || 0,
+            duration,
+            digit,
+            growth_rate,
+            multiplier,
+            barrier_offset,
+            take_profit: use_take_profit ? Number(take_profit) || null : null,
+            stop_loss: use_stop_loss ? Number(stop_loss) || null : null,
+            deal_cancellation,
+        }),
+        [
+            barrier_offset,
+            basis,
+            currency,
+            deal_cancellation,
+            digit,
+            duration,
+            growth_rate,
+            multiplier,
+            stake,
+            stop_loss,
+            symbol,
+            take_profit,
+            use_stop_loss,
+            use_take_profit,
+        ]
+    );
+
+    const { prices } = useProposal(trade_type, inputs, Boolean(symbol));
+
+    /* ---------------------------------------------------------- buying */
+
+    const buy = useCallback(
+        async (index: number) => {
+            const side = trade_type.sides[index];
+            const price = prices[index];
+            if (!side) return;
+
+            if (!trade_type.tradable) {
+                say(localize('That trade type is not available in this panel yet.'), true);
+                return;
+            }
+            if (!price?.id) {
+                say(localize('Waiting for a price on that side.'), true);
+                return;
+            }
+
+            setBuying(index);
+            say(localize('Buying…'));
+
+            try {
+                // Bought against the quote on screen, as the platform does.
+                const bought = await send({ buy: price.id, price: price.ask_price ?? Number(stake) });
+                const contract_id = bought?.buy?.contract_id;
+                say(
+                    localize('Bought {{label}} for {{amount}}', {
+                        label: side.label,
+                        amount: money(Number(bought?.buy?.buy_price ?? 0), currency),
+                    })
+                );
+                journal?.pushMessage(
+                    `${localize('Bought')} ${side.contract_type} ${localize('for')} ${Number(
+                        bought?.buy?.buy_price ?? 0
+                    ).toFixed(2)} ${currency}`,
+                    MessageTypes.NOTIFY,
+                    'journal__text'
+                );
+                if (contract_id) {
+                    // Following it is what puts it in Open positions and in the
+                    // run panel's transactions.
+                    void send({ proposal_open_contract: 1, contract_id, subscribe: 1 }).catch(() => {
+                        /* it still settles; only live updates are missed */
+                    });
+                }
+            } catch (error) {
+                say(error instanceof Error ? error.message : localize('Could not buy'), true);
+            } finally {
+                if (is_mounted.current) setBuying(null);
+            }
+        },
+        [currency, journal, prices, say, send, stake, trade_type]
+    );
+
+    /* ----------------------------------------------------------- render */
+
+    const market_name = symbols.find(item => item.symbol === symbol)?.display_name || symbol;
+    const change = quote ? quote.value - quote.first : 0;
+    const change_pct = quote && quote.first ? (change / quote.first) * 100 : 0;
+    const filtered_markets = symbols.filter(item =>
+        item.display_name.toLowerCase().includes(market_search.trim().toLowerCase())
+    );
+
+    const field = (name: string) => trade_type.fields.includes(name as never);
 
     return (
         <div className='manual-trader'>
-            <div className='manual-trader__layout'>
-                {/* The platform's own chart, the same one the Charts tab uses. */}
-                <div className='manual-trader__chart'>
-                    <ChartWrapper prefix='manual-trader' show_digits_stats={false} />
-                </div>
+            <div className='mt-grid'>
+                <aside className='mt-grid__left'>
+                    <OpenPositions currency={currency} />
+                </aside>
 
-                <div className='manual-trader__container'>
-                <div className='manual-trader__topbar'>
-                    <div className='manual-trader__title'>{localize('Manual Trader')}</div>
-                    <div className='manual-trader__balance'>
-                        {Number(client?.balance || 0).toFixed(2)} {currency}
-                    </div>
-                </div>
-
-                <div className='manual-trader__card'>
-                    <div className='manual-trader__row manual-trader__row--two'>
-                        <div className='manual-trader__field'>
-                            <label htmlFor='mt-symbol'>{localize('Market')}</label>
-                            <select
-                                id='mt-symbol'
-                                value={symbol}
-                                onChange={event => {
-                                    setSymbol(event.target.value);
-                                    startTicks(event.target.value);
-                                }}
-                                disabled={busy}
-                            >
-                                {symbols.map(item => (
-                                    <option key={item.symbol} value={item.symbol}>
-                                        {item.display_name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div className='manual-trader__field'>
-                            <label htmlFor='mt-trade-type'>{localize('Trade type')}</label>
-                            <select
-                                id='mt-trade-type'
-                                value={trade_type}
-                                onChange={event => setTradeType(event.target.value)}
-                                disabled={busy}
-                            >
-                                {TRADE_TYPES.map(item => (
-                                    <option key={item.value} value={item.value}>
-                                        {item.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className='manual-trader__row manual-trader__row--compact'>
-                        <div className='manual-trader__field'>
-                            <label htmlFor='mt-ticks'>{localize('Ticks')}</label>
-                            <input
-                                id='mt-ticks'
-                                type='number'
-                                min={1}
-                                max={10}
-                                value={ticks}
-                                onChange={event => setTicks(Math.max(1, Math.min(10, Number(event.target.value) || 1)))}
-                                disabled={busy}
-                            />
-                        </div>
-
-                        <div className='manual-trader__field'>
-                            <label htmlFor='mt-stake'>{localize('Stake')}</label>
-                            <input
-                                id='mt-stake'
-                                type='number'
-                                step='0.01'
-                                min={0.35}
-                                value={stake}
-                                onChange={event => setStake(Math.max(0.35, Number(event.target.value) || 0.35))}
-                                disabled={busy}
-                            />
-                        </div>
-
-                        {shows_match_prediction && (
-                            <div className='manual-trader__field'>
-                                <label htmlFor='mt-prediction'>{localize('Prediction digit')}</label>
-                                <input
-                                    id='mt-prediction'
-                                    type='number'
-                                    min={0}
-                                    max={9}
-                                    value={prediction}
-                                    onChange={event => setPrediction(clampDigit(Number(event.target.value)))}
-                                    disabled={busy}
-                                />
-                            </div>
-                        )}
-
-                        {shows_over_under && (
-                            <>
-                                <div className='manual-trader__field'>
-                                    <label htmlFor='mt-prediction'>{localize('Prediction')}</label>
-                                    <input
-                                        id='mt-prediction'
-                                        type='number'
-                                        min={0}
-                                        max={9}
-                                        value={prediction}
-                                        onChange={event => setPrediction(clampDigit(Number(event.target.value)))}
-                                        disabled={busy}
-                                    />
-                                </div>
-                                <div className='manual-trader__field'>
-                                    <label htmlFor='mt-prediction-after-loss'>{localize('Prediction after a loss')}</label>
-                                    <input
-                                        id='mt-prediction-after-loss'
-                                        type='number'
-                                        min={0}
-                                        max={9}
-                                        value={prediction_after_loss}
-                                        onChange={event => setPredictionAfterLoss(clampDigit(Number(event.target.value)))}
-                                        disabled={busy}
-                                    />
-                                </div>
-                            </>
-                        )}
-
-                        <div className='manual-trader__field'>
-                            <label htmlFor='mt-martingale'>{localize('Martingale (auto)')}</label>
-                            <input
-                                id='mt-martingale'
-                                type='number'
-                                min={1}
-                                step='0.1'
-                                value={martingale}
-                                onChange={event => setMartingale(Math.max(1, Number(event.target.value) || 1))}
-                                disabled={busy}
-                            />
-                        </div>
-                    </div>
-
-                    <div className='manual-trader__digits'>
-                        {digits.length === 0 && <div className='manual-trader__digits-empty'>{localize('Waiting for ticks…')}</div>}
-                        {digits.map((digit, index) => (
-                            <div
-                                key={`${index}-${digit}`}
-                                className={`manual-trader__digit ${digit === last_digit && index === digits.length - 1 ? 'is-current' : ''} ${hintFor(digit)}`}
-                            >
-                                {digit}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className='manual-trader__footer-bar'>
-                        <span className='manual-trader__footer-item'>
-                            {localize('Total profit/loss')}: {total_profit.toFixed(2)} {currency}
-                        </span>
-                        <span className='manual-trader__footer-item'>
-                            {localize('Last digit')}: {last_digit ?? '-'}
-                        </span>
-                        <span className='manual-trader__footer-item'>
-                            {localize('Wins')}: {wins} · {localize('Losses')}: {losses}
-                        </span>
-                    </div>
-
-                    <div className='manual-trader__cta'>
+                <main className='mt-grid__chart'>
+                    <div className='mt-market'>
                         <button
                             type='button'
-                            className='manual-trader__cta-once'
-                            onClick={tradeOnce}
-                            disabled={busy || !symbol}
+                            className='mt-market__chip'
+                            onClick={() => setMarketOpen(open => !open)}
                         >
-                            {is_buying ? localize('Buying…') : localize('Trade once')}
+                            <span className='mt-market__badge'>{market_name.replace(/\D/g, '').slice(0, 3)}</span>
+                            <span className='mt-market__text'>
+                                <span className='mt-market__name'>{market_name}</span>
+                                <span
+                                    className={`mt-market__quote ${
+                                        change >= 0 ? 'mt-market__quote--up' : 'mt-market__quote--down'
+                                    }`}
+                                >
+                                    {quote ? quote.value.toFixed(2) : '--'} {change >= 0 ? '+' : ''}
+                                    {change.toFixed(2)} ({change_pct.toFixed(2)}%){' '}
+                                    {change >= 0 ? '▲' : '▼'}
+                                </span>
+                            </span>
+                            <span className='mt-market__chevron' aria-hidden='true'>
+                                ⌄
+                            </span>
                         </button>
 
-                        {is_running ? (
-                            <button type='button' className='manual-trader__cta-stop' onClick={stopAuto}>
-                                {localize('Stop')}
-                            </button>
-                        ) : (
-                            <button
-                                type='button'
-                                className='manual-trader__cta-auto'
-                                onClick={startAuto}
-                                disabled={busy || !symbol}
-                            >
-                                {localize('Start auto trading')}
-                            </button>
+                        {market_open && (
+                            <div className='mt-market__menu'>
+                                <input
+                                    type='search'
+                                    className='mt-market__search'
+                                    placeholder={localize('Search markets')}
+                                    value={market_search}
+                                    onChange={event => setMarketSearch(event.target.value)}
+                                />
+                                <div className='mt-market__list'>
+                                    {filtered_markets.map(item => (
+                                        <button
+                                            key={item.symbol}
+                                            type='button'
+                                            className={`mt-market__option ${
+                                                item.symbol === symbol ? 'mt-market__option--active' : ''
+                                            }`}
+                                            onClick={() => {
+                                                setSymbol(item.symbol);
+                                                void startTicks(item.symbol);
+                                                setMarketOpen(false);
+                                            }}
+                                        >
+                                            {item.display_name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         )}
                     </div>
 
-                    {status && (
-                        <div className='manual-trader__status'>
-                            <Text size='xs' color={is_error ? 'loss-danger' : 'prominent'}>
-                                {status}
-                            </Text>
+                    <ChartWrapper prefix='manual-trader' show_digits_stats={shows_digit_stats} />
+                </main>
+
+                <aside className='mt-grid__panel'>
+                    <a
+                        className='mt-panel__learn'
+                        href='https://deriv.com/trade-types/options/'
+                        target='_blank'
+                        rel='noopener noreferrer'
+                    >
+                        {localize('Learn about this trade type')}
+                    </a>
+
+                    <button type='button' className='mt-panel__type' onClick={() => setTypesOpen(open => !open)}>
+                        <span className='mt-panel__type-back' aria-hidden='true'>
+                            ‹
+                        </span>
+                        <span className='mt-types__marks' aria-hidden='true'>
+                            <span className='mt-types__mark mt-types__mark--up' />
+                            {trade_type.sides[1] && <span className='mt-types__mark mt-types__mark--down' />}
+                        </span>
+                        <span className='mt-panel__type-label'>{localize(trade_type.label)}</span>
+                    </button>
+
+                    {types_open && (
+                        <TradeTypesMenu
+                            selected={trade_type_id}
+                            available={available}
+                            onSelect={setTradeTypeId}
+                            onClose={() => setTypesOpen(false)}
+                        />
+                    )}
+
+                    {field('growth_rate') && (
+                        <div className='mt-panel__block'>
+                            <div className='mt-panel__label'>{localize('Growth rate')}</div>
+                            <div className='mt-panel__pills'>
+                                {GROWTH_RATES.map(rate => (
+                                    <button
+                                        key={rate}
+                                        type='button'
+                                        className={`mt-panel__pill ${
+                                            rate === growth_rate ? 'mt-panel__pill--active' : ''
+                                        }`}
+                                        onClick={() => setGrowthRate(rate)}
+                                    >
+                                        {Math.round(rate * 100)}%
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     )}
+
+                    {field('multiplier') && (
+                        <div className='mt-panel__block'>
+                            <div className='mt-panel__label'>{localize('Multiplier')}</div>
+                            <div className='mt-panel__pills'>
+                                {MULTIPLIERS.map(value => (
+                                    <button
+                                        key={value}
+                                        type='button'
+                                        className={`mt-panel__pill ${
+                                            value === multiplier ? 'mt-panel__pill--active' : ''
+                                        }`}
+                                        onClick={() => setMultiplier(value)}
+                                    >
+                                        x{value}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {field('duration') && (
+                        <div className='mt-panel__block'>
+                            <div className='mt-panel__boxed'>{localize('Ticks')}</div>
+                            <input
+                                className='mt-panel__slider'
+                                type='range'
+                                min={1}
+                                max={MAX_TICKS}
+                                value={duration}
+                                onChange={event => setDuration(Number(event.target.value))}
+                                aria-label={localize('Ticks')}
+                            />
+                            <div className='mt-panel__slider-value'>
+                                {duration} {duration === 1 ? localize('Tick') : localize('Ticks')}
+                            </div>
+                        </div>
+                    )}
+
+                    {field('digit_prediction') && (
+                        <div className='mt-panel__block'>
+                            <div className='mt-panel__label mt-panel__label--center'>
+                                {localize('Last Digit Prediction')}
+                            </div>
+                            <div className='mt-panel__digits'>
+                                {DIGITS.map(value => (
+                                    <button
+                                        key={value}
+                                        type='button'
+                                        className={`mt-panel__digit ${
+                                            value === digit ? 'mt-panel__digit--active' : ''
+                                        }`}
+                                        onClick={() => setDigit(value)}
+                                    >
+                                        {value}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {field('barrier_offset') && (
+                        <div className='mt-panel__block'>
+                            <div className='mt-panel__label'>{localize('Barrier')}</div>
+                            <input
+                                className='mt-panel__input'
+                                value={barrier_offset}
+                                onChange={event => setBarrierOffset(event.target.value)}
+                                aria-label={localize('Barrier')}
+                            />
+                        </div>
+                    )}
+
+                    <div className='mt-panel__block'>
+                        {field('basis_toggle') ? (
+                            <div className='mt-panel__toggle'>
+                                <button
+                                    type='button'
+                                    className={`mt-panel__toggle-side ${
+                                        basis === 'stake' ? 'mt-panel__toggle-side--active' : ''
+                                    }`}
+                                    onClick={() => setBasis('stake')}
+                                >
+                                    {localize('Stake')}
+                                </button>
+                                <button
+                                    type='button'
+                                    className={`mt-panel__toggle-side ${
+                                        basis === 'payout' ? 'mt-panel__toggle-side--active' : ''
+                                    }`}
+                                    onClick={() => setBasis('payout')}
+                                >
+                                    {localize('Payout')}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className='mt-panel__label'>{localize('Stake')}</div>
+                        )}
+
+                        <div className='mt-panel__stepper'>
+                            <button
+                                type='button'
+                                className='mt-panel__step'
+                                onClick={() => setStake(String(Math.max(0.35, (Number(stake) || 0) - 1)))}
+                                aria-label={localize('Less')}
+                            >
+                                −
+                            </button>
+                            <input
+                                className='mt-panel__stake'
+                                type='number'
+                                min={0.35}
+                                step={1}
+                                value={stake}
+                                onChange={event => setStake(event.target.value)}
+                                aria-label={localize('Stake')}
+                            />
+                            <button
+                                type='button'
+                                className='mt-panel__step'
+                                onClick={() => setStake(String((Number(stake) || 0) + 1))}
+                                aria-label={localize('More')}
+                            >
+                                +
+                            </button>
+                        </div>
                     </div>
-                </div>
+
+                    {field('take_profit') && (
+                        <label className='mt-panel__check'>
+                            <input
+                                type='checkbox'
+                                checked={use_take_profit}
+                                onChange={event => setUseTakeProfit(event.target.checked)}
+                            />
+                            <span>{localize('Take profit')}</span>
+                            {use_take_profit && (
+                                <input
+                                    className='mt-panel__input mt-panel__input--small'
+                                    type='number'
+                                    min={0}
+                                    value={take_profit}
+                                    onChange={event => setTakeProfit(event.target.value)}
+                                    aria-label={localize('Take profit')}
+                                />
+                            )}
+                        </label>
+                    )}
+
+                    {field('stop_loss') && (
+                        <label className='mt-panel__check'>
+                            <input
+                                type='checkbox'
+                                checked={use_stop_loss}
+                                onChange={event => setUseStopLoss(event.target.checked)}
+                            />
+                            <span>{localize('Stop loss')}</span>
+                            {use_stop_loss && (
+                                <input
+                                    className='mt-panel__input mt-panel__input--small'
+                                    type='number'
+                                    min={0}
+                                    value={stop_loss}
+                                    onChange={event => setStopLoss(event.target.value)}
+                                    aria-label={localize('Stop loss')}
+                                />
+                            )}
+                        </label>
+                    )}
+
+                    {field('deal_cancellation') && (
+                        <label className='mt-panel__check'>
+                            <input
+                                type='checkbox'
+                                checked={deal_cancellation}
+                                onChange={event => setDealCancellation(event.target.checked)}
+                            />
+                            <span>{localize('Deal cancellation')}</span>
+                        </label>
+                    )}
+
+                    {/* What the quote says about this contract, as Deriv lists it. */}
+                    {trade_type_id === 'multipliers' && (
+                        <div className='mt-panel__facts'>
+                            <span>
+                                {localize('Commission')}
+                                <b>{money(prices[0]?.commission ?? null, currency)}</b>
+                            </span>
+                            <span>
+                                {localize('Stop out')}
+                                <b>{money(prices[0]?.stop_out ?? null, currency)}</b>
+                            </span>
+                        </div>
+                    )}
+
+                    {trade_type_id === 'accumulator' && (
+                        <div className='mt-panel__facts mt-panel__facts--rows'>
+                            <span>
+                                {localize('Max. payout')}
+                                <b>{money(prices[0]?.max_payout ?? null, currency)}</b>
+                            </span>
+                            <span>
+                                {localize('Max. ticks')}
+                                <b>
+                                    {prices[0]?.max_ticks === null || prices[0]?.max_ticks === undefined
+                                        ? '--'
+                                        : `${prices[0].max_ticks} ${localize('ticks')}`}
+                                </b>
+                            </span>
+                        </div>
+                    )}
+
+                    <div className='mt-panel__ctas'>
+                        {trade_type.sides.map((side, index) => {
+                            if (!side) return null;
+                            const price = prices[index];
+                            const is_single = !trade_type.sides[1];
+                            const shows_amount = trade_type_id === 'multipliers';
+
+                            return (
+                                <div key={side.contract_type} className='mt-panel__cta-wrap'>
+                                    {!is_single && !shows_amount && (
+                                        <div className='mt-panel__payout'>
+                                            {localize('Payout')} {money(price?.payout ?? null, currency)}
+                                        </div>
+                                    )}
+                                    <button
+                                        type='button'
+                                        className={`mt-panel__cta ${
+                                            index === 0 ? 'mt-panel__cta--up' : 'mt-panel__cta--down'
+                                        }`}
+                                        onClick={() => buy(index)}
+                                        disabled={buying !== null || !trade_type.tradable}
+                                    >
+                                        <span className='mt-panel__cta-label'>{localize(side.label)}</span>
+                                        <span className='mt-panel__cta-value'>
+                                            {is_single
+                                                ? ''
+                                                : shows_amount
+                                                  ? money(Number(stake) || 0, currency)
+                                                  : percent(price?.percentage ?? null)}
+                                        </span>
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {!trade_type.tradable && (
+                        <p className='mt-panel__note'>
+                            {localize('This trade type is shown for reference; it cannot be bought here yet.')}
+                        </p>
+                    )}
+
+                    {(status || prices[0]?.error) && (
+                        <p className={`mt-panel__status ${is_error ? 'mt-panel__status--error' : ''}`}>
+                            {status || prices[0]?.error}
+                        </p>
+                    )}
+                </aside>
             </div>
         </div>
     );
