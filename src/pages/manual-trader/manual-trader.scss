@@ -1061,3 +1061,157 @@
         }
     }
 }
+
+/**
+ * Typography, matched to Deriv's trader.
+ *
+ * The face is from Deriv's live trader stylesheet:
+ *     *, html, .body { font-family: "IBM Plex Sans", sans-serif; }
+ * Scoped with :where() so it has the same zero specificity as Deriv's `*`:
+ * the chart's own class rules win over it here exactly as they do there.
+ *
+ * Sizes and weights were measured off the reference screenshots - each
+ * label's capital height divided by Plex's cap height (0.698 em) - and land on
+ * Deriv's own scale: almost everything 14px, the "Learn about" line 10px, the
+ * accumulator facts 12px. Text is #333333, as sampled.
+ */
+:where(.manual-trader),
+:where(.manual-trader) * {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.manual-trader {
+    color: #333333;
+    font-size: 1.4rem;
+    line-height: 1.43;
+
+    // 10px, regular, underlined (measured cap height 7px).
+    .mt-panel__learn {
+        font-size: 1rem;
+        font-weight: 400;
+        line-height: 1.4;
+    }
+
+    // 14px bold.
+    .mt-panel__type-label,
+    .mt-panel__slider-value,
+    .mt-panel__cta-label,
+    .mt-panel__cta-value,
+    .mt-positions__title,
+    .mt-stats__title {
+        font-size: 1.4rem;
+        font-weight: 700;
+    }
+
+    // 14px regular.
+    .mt-panel__boxed,
+    .mt-panel__label,
+    .mt-panel__digit,
+    .mt-panel__pill,
+    .mt-panel__toggle-side,
+    .mt-panel__stake,
+    .mt-panel__currency,
+    .mt-panel__payout,
+    .mt-panel__check,
+    .mt-panel__status,
+    .mt-panel__note,
+    .mt-positions__empty-text,
+    .mt-stats,
+    .mt-stats__value {
+        font-size: 1.4rem;
+        font-weight: 400;
+    }
+
+    .mt-panel__label {
+        color: #333333;
+    }
+
+    // The selected segment reads bold; a selected digit or pill does not.
+    .mt-panel__toggle-side--active {
+        font-weight: 700;
+    }
+
+    .mt-panel__digit--active,
+    .mt-panel__pill--active {
+        font-weight: 400;
+    }
+
+    // "Payout" in grey, the figure in bold, both 14px.
+    .mt-panel__payout b {
+        font-size: 1.4rem;
+        font-weight: 700;
+    }
+
+    // Max. payout / Max. ticks: 12px, the label bold and the figure regular.
+    .mt-panel__facts {
+        font-size: 1.2rem;
+        font-weight: 700;
+
+        b {
+            font-size: 1.2rem;
+            font-weight: 400;
+        }
+    }
+
+    // Digit circles: the digit 14px bold, its share 12px regular.
+    .mt-digits__value {
+        b {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+
+        small {
+            font-size: 1.2rem;
+            font-weight: 400;
+        }
+    }
+
+    // The trade types menu, in the same scale.
+    .mt-types__nav-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+    }
+
+    .mt-types__nav-item,
+    .mt-types__item,
+    .mt-types__search input,
+    .mt-types__learn {
+        font-size: 1.4rem;
+    }
+
+    .mt-types__group-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+}
+
+/**
+ * Text colours, sampled from the reference screens: body text #333333, the
+ * quiet lines - "You have no open positions.", the "Payout" before a figure -
+ * #999999, the share under each digit #545454. Buttons and inputs do not
+ * inherit colour on their own, which left them pure black.
+ */
+.manual-trader {
+    --mt-muted: #999999;
+
+    button,
+    input,
+    select {
+        color: inherit;
+    }
+
+    .mt-positions__empty-text,
+    .mt-panel__payout {
+        color: #999999;
+    }
+
+    .mt-panel__payout b,
+    .mt-panel__facts,
+    .mt-panel__facts b {
+        color: #333333;
+    }
+
+    .mt-digits__value small {
+        color: #545454;
+    }
+}

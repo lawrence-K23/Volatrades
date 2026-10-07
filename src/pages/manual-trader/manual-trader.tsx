@@ -230,6 +230,22 @@ const ManualTrader = observer(() => {
      * does not flash, and never longer than eight seconds, so a slow or
      * refused quote cannot trap anyone behind it - the panel then says why.
      */
+    /**
+     * IBM Plex Sans, the face Deriv's trader is set in - read from its live
+     * stylesheet, `*, html, .body { font-family: "IBM Plex Sans" }`. Loaded
+     * once from Google Fonts the same way load-web-font loads the site's own
+     * font, and applied to this tab only, so the rest of the site keeps Inter.
+     */
+    useEffect(() => {
+        const id = 'webfont-ibm-plex-sans';
+        if (document.getElementById(id)) return;
+        const link = document.createElement('link');
+        link.id = id;
+        link.rel = 'stylesheet';
+        link.href = 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap';
+        document.head.appendChild(link);
+    }, []);
+
     const [min_elapsed, setMinElapsed] = useState(false);
     const [is_ready, setIsReady] = useState(false);
     const has_first_quote = Boolean(prices[0]?.id || prices[0]?.error);
