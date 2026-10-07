@@ -22,7 +22,7 @@ import { localize } from '@deriv-com/translations';
 import OpenPositions from './open-positions';
 import { byId, type TTradeTypeId } from './trade-types';
 import TradeTypesMenu from './trade-types-menu';
-import useProposal, { type TProposalInputs } from './use-proposal';
+import useProposal, { buildProposalRequest, type TProposalInputs } from './use-proposal';
 import './manual-trader.scss';
 
 type TSymbol = { symbol: string; display_name: string };
@@ -43,19 +43,13 @@ const ManualTrader = observer(() => {
     const { client, chart_store, journal } = store;
     const currency = client?.currency || 'USD';
 
-    const tick_sub_id = useRef<string | null>(null);
-    const tick_listener = useRef<((evt: MessageEvent) => void) | null>(null);
     const is_mounted = useRef(true);
 
-    const [symbols, setSymbols] = useState<TSymbol[]>([]);
     const [symbol, setSymbol] = useState('');
-    const [quote, setQuote] = useState<{ value: number; first: number } | null>(null);
 
     const [trade_type_id, setTradeTypeId] = useState<TTradeTypeId>('even_odd');
     const [available, setAvailable] = useState<string[] | null>(null);
     const [types_open, setTypesOpen] = useState(false);
-    const [market_open, setMarketOpen] = useState(false);
-    const [market_search, setMarketSearch] = useState('');
 
     const [duration, setDuration] = useState(1);
     const [digit, setDigit] = useState(2);
@@ -90,64 +84,6 @@ const ManualTrader = observer(() => {
         return response;
     }, []);
 
-    /* ------------------------------------------------------------ ticks */
-
-    const stopTicks = useCallback(() => {
-        try {
-            if (tick_sub_id.current) {
-                api_base?.api?.send({ forget: tick_sub_id.current });
-                tick_sub_id.current = null;
-            }
-            if (tick_listener.current) {
-                api_base?.api?.connection?.removeEventListener('message', tick_listener.current);
-                tick_listener.current = null;
-            }
-        } catch {
-            /* the stream closes with the socket anyway */
-        }
-    }, []);
-
-    const startTicks = useCallback(
-        async (next_symbol: string) => {
-            stopTicks();
-            setQuote(null);
-
-            if (!next_symbol) return;
-
-            try {
-                const history = await send({
-                    ticks_history: next_symbol,
-                    end: 'latest',
-                    count: 60,
-                    style: 'ticks',
-                });
-                const prices: number[] = (history?.history?.prices || []).map(Number);
-                if (prices.length && is_mounted.current) {
-                    setQuote({ value: prices[prices.length - 1], first: prices[0] });
-                }
-
-                const stream = await send({ ticks: next_symbol, subscribe: 1 });
-                if (stream?.subscription?.id) tick_sub_id.current = String(stream.subscription.id);
-
-                const onMessage = (evt: MessageEvent) => {
-                    try {
-                        const data = JSON.parse(evt.data as string);
-                        if (data?.msg_type !== 'tick' || data?.tick?.symbol !== next_symbol) return;
-                        const value = Number(data.tick.quote);
-                        setQuote(previous => ({ value, first: previous?.first ?? value }));
-                    } catch {
-                        /* a frame we do not care about */
-                    }
-                };
-                tick_listener.current = onMessage;
-                api_base?.api?.connection?.addEventListener('message', onMessage);
-            } catch (error) {
-                say(error instanceof Error ? error.message : localize('Could not follow that market'), true);
-            }
-        },
-        [say, send, stopTicks]
-    );
-
     /* ---------------------------------------------------------- markets */
 
     useEffect(() => {
@@ -166,10 +102,10 @@ const ManualTrader = observer(() => {
                 if (!is_mounted.current) return;
                 if (!list.length) throw new Error(localize('Deriv returned no volatility markets.'));
 
-                setSymbols(list);
+                // Follow whatever the chart is already showing, if it is one
+                // we know; otherwise start it on the first market.
                 const first = list.find(item => item.symbol === chart_store?.symbol)?.symbol || list[0].symbol;
                 setSymbol(first);
-                void startTicks(first);
             } catch (error) {
                 say(error instanceof Error ? error.message : localize('Could not load markets'), true);
             }
@@ -177,7 +113,6 @@ const ManualTrader = observer(() => {
 
         return () => {
             is_mounted.current = false;
-            stopTicks();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -211,14 +146,16 @@ const ManualTrader = observer(() => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [symbol]);
 
+    // The chart's own picker is the market selector, so whatever it is switched
+    // to becomes the market this panel quotes and buys - including markets
+    // outside our list, since the trade types on offer are read from Deriv for
+    // whichever market is showing.
     useEffect(() => {
         const from_chart = chart_store?.symbol;
         if (!from_chart || from_chart === symbol) return;
-        if (!symbols.some(item => item.symbol === from_chart)) return;
         setSymbol(from_chart);
-        void startTicks(from_chart);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [chart_store?.symbol, symbols]);
+    }, [chart_store?.symbol]);
 
     /* --------------------------------------------------------- proposals */
 
@@ -269,17 +206,41 @@ const ManualTrader = observer(() => {
                 say(localize('That trade type is not available in this panel yet.'), true);
                 return;
             }
-            if (!price?.id) {
-                say(localize('Waiting for a price on that side.'), true);
-                return;
-            }
 
             setBuying(index);
             say(localize('Buying…'));
 
             try {
-                // Bought against the quote on screen, as the platform does.
-                const bought = await send({ buy: price.id, price: price.ask_price ?? Number(stake) });
+                /**
+                 * Bought against the quote on screen when there is one, which
+                 * is what the platform does and what gives the price shown.
+                 *
+                 * Without one, the contract is described on the buy itself.
+                 * That matters because a proposal subscription can be taken
+                 * away from under this panel - the bot's accumulator handling
+                 * sends `forget_all: 'proposal'`, which forgets every open
+                 * proposal on the connection, this panel's included. Before
+                 * this, that left the button doing nothing but saying it was
+                 * waiting for a price.
+                 */
+                const request = price?.id
+                    ? { buy: price.id, price: price.ask_price ?? Number(stake) }
+                    : {
+                          buy: 1,
+                          price: Number(stake),
+                          parameters: (() => {
+                              const { proposal, subscribe, ...parameters } = buildProposalRequest(
+                                  trade_type,
+                                  side.contract_type,
+                                  inputs
+                              );
+                              void proposal;
+                              void subscribe;
+                              return parameters;
+                          })(),
+                      };
+
+                const bought = await send(request);
                 const contract_id = bought?.buy?.contract_id;
                 say(
                     localize('Bought {{label}} for {{amount}}', {
@@ -307,19 +268,14 @@ const ManualTrader = observer(() => {
                 if (is_mounted.current) setBuying(null);
             }
         },
-        [currency, journal, prices, say, send, stake, trade_type]
+        [currency, inputs, journal, prices, say, send, stake, trade_type]
     );
 
     /* ----------------------------------------------------------- render */
 
-    const market_name = symbols.find(item => item.symbol === symbol)?.display_name || symbol;
-    const change = quote ? quote.value - quote.first : 0;
-    const change_pct = quote && quote.first ? (change / quote.first) * 100 : 0;
-    const filtered_markets = symbols.filter(item =>
-        item.display_name.toLowerCase().includes(market_search.trim().toLowerCase())
-    );
-
     const field = (name: string) => trade_type.fields.includes(name as never);
+    // A quote may fail on either side; show the first complaint either made.
+    const quote_error = prices.find(price => price?.error)?.error ?? null;
 
     return (
         <div className='manual-trader'>
@@ -328,62 +284,13 @@ const ManualTrader = observer(() => {
                     <OpenPositions currency={currency} />
                 </aside>
 
+                {/*
+                 * The chart brings its own market chip and picker - SmartCharts
+                 * renders ChartTitle as its top widget, which is the chip in
+                 * Deriv's own screen, badge and search and all. Adding another
+                 * would just stack two of them.
+                 */}
                 <main className='mt-grid__chart'>
-                    <div className='mt-market'>
-                        <button
-                            type='button'
-                            className='mt-market__chip'
-                            onClick={() => setMarketOpen(open => !open)}
-                        >
-                            <span className='mt-market__badge'>{market_name.replace(/\D/g, '').slice(0, 3)}</span>
-                            <span className='mt-market__text'>
-                                <span className='mt-market__name'>{market_name}</span>
-                                <span
-                                    className={`mt-market__quote ${
-                                        change >= 0 ? 'mt-market__quote--up' : 'mt-market__quote--down'
-                                    }`}
-                                >
-                                    {quote ? quote.value.toFixed(2) : '--'} {change >= 0 ? '+' : ''}
-                                    {change.toFixed(2)} ({change_pct.toFixed(2)}%){' '}
-                                    {change >= 0 ? '▲' : '▼'}
-                                </span>
-                            </span>
-                            <span className='mt-market__chevron' aria-hidden='true'>
-                                ⌄
-                            </span>
-                        </button>
-
-                        {market_open && (
-                            <div className='mt-market__menu'>
-                                <input
-                                    type='search'
-                                    className='mt-market__search'
-                                    placeholder={localize('Search markets')}
-                                    value={market_search}
-                                    onChange={event => setMarketSearch(event.target.value)}
-                                />
-                                <div className='mt-market__list'>
-                                    {filtered_markets.map(item => (
-                                        <button
-                                            key={item.symbol}
-                                            type='button'
-                                            className={`mt-market__option ${
-                                                item.symbol === symbol ? 'mt-market__option--active' : ''
-                                            }`}
-                                            onClick={() => {
-                                                setSymbol(item.symbol);
-                                                void startTicks(item.symbol);
-                                                setMarketOpen(false);
-                                            }}
-                                        >
-                                            {item.display_name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
                     <ChartWrapper prefix='manual-trader' show_digits_stats={shows_digit_stats} />
                 </main>
 
@@ -690,9 +597,14 @@ const ManualTrader = observer(() => {
                         </p>
                     )}
 
-                    {(status || prices[0]?.error) && (
-                        <p className={`mt-panel__status ${is_error ? 'mt-panel__status--error' : ''}`}>
-                            {status || prices[0]?.error}
+                    {/* Whatever Deriv said, from whichever side it said it about. */}
+                    {(status || quote_error) && (
+                        <p
+                            className={`mt-panel__status ${
+                                is_error || (!status && quote_error) ? 'mt-panel__status--error' : ''
+                            }`}
+                        >
+                            {status || quote_error}
                         </p>
                     )}
                 </aside>
