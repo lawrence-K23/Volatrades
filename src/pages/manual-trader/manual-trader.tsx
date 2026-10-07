@@ -21,8 +21,9 @@ import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
 import { localize } from '@deriv-com/translations';
 import OpenPositions from './open-positions';
 import { byId, type TTradeTypeId } from './trade-types';
-import TradeTypesMenu from './trade-types-menu';
-import useProposal, { buildProposalRequest, type TProposalInputs } from './use-proposal';
+import TradeTypeIcon from './trade-type-icon';
+import TradeTypesMenu, { SideMarks } from './trade-types-menu';
+import useProposal, { buildProposalRequest, readApiError, type TProposalInputs } from './use-proposal';
 import './manual-trader.scss';
 
 type TSymbol = { symbol: string; display_name: string };
@@ -41,13 +42,15 @@ const percent = (value: number | null) => (value === null ? '--' : `${value.toFi
 const ManualTrader = observer(() => {
     const store = useStore();
     const { client, chart_store, journal } = store;
-    const currency = client?.currency || 'USD';
+    // The currency of the account the socket is authorised for - the one a
+    // buy is charged to - rather than whatever the client store last held.
+    const currency = (api_base?.account_info as any)?.currency || client?.currency || 'USD';
 
     const is_mounted = useRef(true);
 
     const [symbol, setSymbol] = useState('');
 
-    const [trade_type_id, setTradeTypeId] = useState<TTradeTypeId>('even_odd');
+    const [trade_type_id, setTradeTypeId] = useState<TTradeTypeId>('accumulator');
     const [available, setAvailable] = useState<string[] | null>(null);
     const [types_open, setTypesOpen] = useState(false);
 
@@ -77,10 +80,25 @@ const ManualTrader = observer(() => {
         setIsError(error);
     }, []);
 
+    /**
+     * Send a request and turn any refusal into an Error carrying Deriv's own
+     * words.
+     *
+     * api_base.api.send() does not throw an Error when Deriv refuses - it
+     * rejects with the response itself, `{ error: { code, message } }`. Every
+     * catch here tested `instanceof Error`, so every refusal was shown as
+     * "Could not buy" and the reason was thrown away, which is why a buy that
+     * failed gave no clue why.
+     */
     const send = useCallback(async (request: Record<string, unknown>) => {
         if (!api_base?.api) throw new Error(localize('Not connected to Deriv yet. Please try again.'));
-        const response: any = await api_base.api.send(request);
-        if (response?.error) throw new Error(response.error.message || response.error.code);
+        let response: any;
+        try {
+            response = await api_base.api.send(request);
+        } catch (rejection) {
+            throw new Error(readApiError(rejection, localize('Deriv did not accept that request.')));
+        }
+        if (response?.error) throw new Error(readApiError(response, localize('Deriv did not accept that request.')));
         return response;
     }, []);
 
@@ -107,7 +125,7 @@ const ManualTrader = observer(() => {
                 const first = list.find(item => item.symbol === chart_store?.symbol)?.symbol || list[0].symbol;
                 setSymbol(first);
             } catch (error) {
-                say(error instanceof Error ? error.message : localize('Could not load markets'), true);
+                say(readApiError(error, localize('Could not load markets')), true);
             }
         })();
 
@@ -263,7 +281,7 @@ const ManualTrader = observer(() => {
                     });
                 }
             } catch (error) {
-                say(error instanceof Error ? error.message : localize('Could not buy'), true);
+                say(readApiError(error, localize('Could not buy')), true);
             } finally {
                 if (is_mounted.current) setBuying(null);
             }
@@ -308,10 +326,7 @@ const ManualTrader = observer(() => {
                         <span className='mt-panel__type-back' aria-hidden='true'>
                             ‹
                         </span>
-                        <span className='mt-types__marks' aria-hidden='true'>
-                            <span className='mt-types__mark mt-types__mark--up' />
-                            {trade_type.sides[1] && <span className='mt-types__mark mt-types__mark--down' />}
-                        </span>
+                        <SideMarks type={trade_type} />
                         <span className='mt-panel__type-label'>{localize(trade_type.label)}</span>
                     </button>
 
@@ -569,7 +584,15 @@ const ManualTrader = observer(() => {
                                         onClick={() => buy(index)}
                                         disabled={buying !== null || !trade_type.tradable}
                                     >
-                                        <span className='mt-panel__cta-label'>{localize(side.label)}</span>
+                                        <span className='mt-panel__cta-label'>
+                                            <TradeTypeIcon
+                                                trade_type_id={trade_type_id}
+                                                contract_type={side.contract_type}
+                                                index={index}
+                                                size='sm'
+                                            />
+                                            {localize(side.label)}
+                                        </span>
                                         <span className='mt-panel__cta-value'>
                                             {is_single
                                                 ? ''

@@ -28,6 +28,11 @@ export type TProposalPrice = {
     max_ticks: number | null;
     /** Accumulators: half-width of the barrier band around the spot. */
     barrier_spot_distance: number | null;
+    /** Accumulators: the band itself, recalculated on every tick. */
+    high_barrier: number | null;
+    low_barrier: number | null;
+    /** Accumulators: how long the spot stayed inside the band, run by run. */
+    ticks_stayed_in: number[];
     error: string | null;
 };
 
@@ -41,6 +46,9 @@ const EMPTY: TProposalPrice = {
     max_payout: null,
     max_ticks: null,
     barrier_spot_distance: null,
+    high_barrier: null,
+    low_barrier: null,
+    ticks_stayed_in: [],
     error: null,
 };
 
@@ -63,6 +71,25 @@ export type TProposalInputs = {
     take_profit: number | null;
     stop_loss: number | null;
     deal_cancellation: boolean;
+};
+
+/**
+ * Deriv's own words for why it refused something.
+ *
+ * The socket rejects with the response object - `{ error: { code, message } }`
+ * - not with an Error, so `instanceof Error` never matched and every refusal
+ * read as a bare fallback. This looks in each place the message can be.
+ */
+export const readApiError = (problem: unknown, fallback: string): string => {
+    const value = problem as any;
+    return (
+        value?.error?.message ||
+        value?.error?.message_to_client ||
+        value?.message ||
+        (typeof value?.error === 'string' ? value.error : '') ||
+        value?.error?.code ||
+        fallback
+    );
 };
 
 const num = (value: unknown): number | null => {
@@ -150,21 +177,23 @@ const readProposal = (proposal: any, stake: number): TProposalPrice => {
         payout,
         ask_price,
         percentage: payout !== null && paid ? (payout / paid - 1) * 100 : null,
-        commission: pick(proposal, [['commission'], ['limit_order', 'commission']]),
+        // Paths as @deriv/api-types documents the proposal response.
+        commission: pick(proposal, [['commission']]),
         stop_out: pick(proposal, [
+            ['limit_order', 'stop_out', 'display_order_amount'],
             ['limit_order', 'stop_out', 'order_amount'],
-            ['limit_order', 'stop_out', 'value'],
         ]),
-        max_payout: pick(proposal, [
-            ['validation_params', 'max_payout'],
-            ['limit_order', 'take_profit', 'max'],
-            ['max_payout'],
-        ]),
-        max_ticks: pick(proposal, [['validation_params', 'max_ticks'], ['max_ticks'], ['ticks_stayed_in']]),
+        max_payout: pick(proposal, [['contract_details', 'maximum_payout']]),
+        max_ticks: pick(proposal, [['contract_details', 'maximum_ticks']]),
         barrier_spot_distance: pick(proposal, [
+            ['contract_details', 'barrier_spot_distance'],
             ['barrier_spot_distance'],
-            ['validation_params', 'barrier_spot_distance'],
         ]),
+        high_barrier: pick(proposal, [['contract_details', 'high_barrier']]),
+        low_barrier: pick(proposal, [['contract_details', 'low_barrier']]),
+        ticks_stayed_in: Array.isArray(proposal?.contract_details?.ticks_stayed_in)
+            ? proposal.contract_details.ticks_stayed_in.map(Number)
+            : [],
         error: null,
     };
 };
@@ -245,7 +274,7 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
                 setPrices(previous => {
                     const next = [...previous];
                     next[index] = data.error
-                        ? { ...EMPTY, error: data.error.message || 'No price' }
+                        ? { ...EMPTY, error: readApiError(data, 'No price') }
                         : readProposal(data.proposal, stake_ref.current);
                     return next;
                 });
@@ -270,7 +299,7 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
                     if (response?.error) {
                         setPrices(previous => {
                             const next = [...previous];
-                            next[index] = { ...EMPTY, error: response.error.message || 'No price' };
+                            next[index] = { ...EMPTY, error: readApiError(response, 'No price') };
                             return next;
                         });
                         return;
@@ -291,10 +320,7 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
                     if (cancelled) return;
                     setPrices(previous => {
                         const next = [...previous];
-                        next[index] = {
-                            ...EMPTY,
-                            error: error instanceof Error ? error.message : 'No price',
-                        };
+                        next[index] = { ...EMPTY, error: readApiError(error, 'No price') };
                         return next;
                     });
                 }

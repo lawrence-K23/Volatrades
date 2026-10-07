@@ -4,6 +4,7 @@
  */
 import { useMemo, useState } from 'react';
 import { localize } from '@deriv-com/translations';
+import TradeTypeIcon from './trade-type-icon';
 import {
     filterTradeTypes,
     groupTradeTypes,
@@ -15,11 +16,20 @@ import {
 
 const LEARN_MORE_URL = 'https://deriv.com/trade-types/options/digital-options/up-and-down/';
 
-/** The small pair of marks each row carries, standing for its two sides. */
-const SideMarks = ({ type }: { type: TTradeType }) => (
+/** Deriv's own icon for each side, as their menu draws them in pairs. */
+export const SideMarks = ({ type }: { type: TTradeType }) => (
     <span className='mt-types__marks' aria-hidden='true'>
-        <span className='mt-types__mark mt-types__mark--up' />
-        {type.sides[1] && <span className='mt-types__mark mt-types__mark--down' />}
+        {type.sides.map((side, index) =>
+            side ? (
+                <TradeTypeIcon
+                    key={side.contract_type}
+                    trade_type_id={type.id}
+                    contract_type={side.contract_type}
+                    index={index}
+                    size='xs'
+                />
+            ) : null
+        )}
     </span>
 );
 
