@@ -35,6 +35,9 @@
     // The trade panel runs flush to the right edge, as it does on Deriv: the
     // page padding stops before it.
     .mt-grid {
+        // The trade types menu is positioned against this, outside the
+        // scrolling panel that used to clip it away.
+        position: relative;
         display: grid;
         grid-template-columns: 26rem minmax(0, 1fr) 25.5rem;
         gap: 0.6rem;
@@ -70,11 +73,20 @@
         min-height: 0;
         border-radius: 0.8rem;
         background: var(--mt-card);
-        overflow: hidden;
+        // Not hidden: the chart's own market picker and menus are absolutely
+        // positioned and have to be able to leave this box.
+        overflow: visible;
 
+        /**
+         * The chart carries its own height - `var(--tab-content-height)`, the
+         * whole tab - because it is written for a tab of its own. Inside this
+         * column that made it taller than its cell, so it covered what sat
+         * beside it and swallowed the clicks meant for them.
+         */
+        .dashboard__chart-wrapper,
         .dc-chart,
         .smartcharts {
-            height: 100%;
+            height: 100% !important;
         }
     }
 
@@ -495,10 +507,22 @@
 
     /* ---------------------------------------------------- trade types menu */
 
+    // Catches the click that closes the menu, without covering it.
+    .mt-types__backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 4;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        cursor: default;
+    }
+
     .mt-types {
         position: absolute;
-        top: 7.5rem;
-        right: calc(100% - 1.2rem);
+        // Level with the top of the panel, immediately to its left.
+        top: 1.2rem;
+        right: 26.7rem;
         z-index: 5;
         display: grid;
         grid-template-columns: 16rem minmax(0, 32rem);

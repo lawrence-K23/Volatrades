@@ -315,14 +315,6 @@ const ManualTrader = observer(() => {
                         <span className='mt-panel__type-label'>{localize(trade_type.label)}</span>
                     </button>
 
-                    {types_open && (
-                        <TradeTypesMenu
-                            selected={trade_type_id}
-                            available={available}
-                            onSelect={setTradeTypeId}
-                            onClose={() => setTypesOpen(false)}
-                        />
-                    )}
 
                     {field('growth_rate') && (
                         <div className='mt-panel__block'>
@@ -608,6 +600,31 @@ const ManualTrader = observer(() => {
                         </p>
                     )}
                 </aside>
+
+                {/*
+                 * Outside the panel on purpose. The panel scrolls, and a
+                 * scrolling box clips what sticks out of it on both axes - so
+                 * while this menu lived inside it, it was clipped away to
+                 * nothing: no way to change trade type, and no way to reach
+                 * Accumulators. Anchored to the grid instead, which clips
+                 * nothing.
+                 */}
+                {types_open && (
+                    <>
+                        <button
+                            type='button'
+                            className='mt-types__backdrop'
+                            aria-label={localize('Close trade types')}
+                            onClick={() => setTypesOpen(false)}
+                        />
+                        <TradeTypesMenu
+                            selected={trade_type_id}
+                            available={available}
+                            onSelect={setTradeTypeId}
+                            onClose={() => setTypesOpen(false)}
+                        />
+                    </>
+                )}
             </div>
         </div>
     );
