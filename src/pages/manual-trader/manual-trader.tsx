@@ -223,6 +223,30 @@ const ManualTrader = observer(() => {
      * +0.488 / -0.488 - rather than an absolute price. Colours are the ones
      * on Deriv's own screen, which are SmartCharts' defaults.
      */
+    /**
+     * The opening spinner, as the reference site opens its trader: the screen
+     * stays covered until the panel has its first live quote, so you never see
+     * a half-built page with empty buttons. Shown for at least a moment so it
+     * does not flash, and never longer than eight seconds, so a slow or
+     * refused quote cannot trap anyone behind it - the panel then says why.
+     */
+    const [min_elapsed, setMinElapsed] = useState(false);
+    const [is_ready, setIsReady] = useState(false);
+    const has_first_quote = Boolean(prices[0]?.id || prices[0]?.error);
+
+    useEffect(() => {
+        const shown = setTimeout(() => setMinElapsed(true), 700);
+        const ceiling = setTimeout(() => setIsReady(true), 8000);
+        return () => {
+            clearTimeout(shown);
+            clearTimeout(ceiling);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (has_first_quote && min_elapsed) setIsReady(true);
+    }, [has_first_quote, min_elapsed]);
+
     // Keyed on the distance itself: the quote is a new object every tick, and
     // a new barrier each tick would make the chart redraw the band for nothing.
     const band_distance = trade_type_id === 'accumulator' ? prices[0]?.barrier_spot_distance ?? null : null;
@@ -338,6 +362,14 @@ const ManualTrader = observer(() => {
 
     return (
         <div className='manual-trader'>
+            {/* The spinner the trader opened with before - same ring, same words. */}
+            {!is_ready && (
+                <div className='manual-trader__loading' role='status' aria-live='polite'>
+                    <span className='manual-trader__spinner' aria-hidden='true' />
+                    <span className='manual-trader__loading-text'>{localize('Loading trader…')}</span>
+                </div>
+            )}
+
             <div className='mt-grid'>
                 <aside className='mt-grid__left'>
                     <OpenPositions currency={currency} />
