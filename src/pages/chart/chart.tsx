@@ -12,8 +12,30 @@ import { useDevice } from '@deriv-com/ui';
 import ToolbarWidgets from './toolbar-widgets';
 import '@deriv-com/smartcharts-champion/dist/smartcharts.css';
 
-const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) => {
-    const barriers: [] = [];
+/**
+ * A line, or a pair of lines with a band between them, drawn over the chart.
+ * The keys are the ones SmartCharts' barrier store reads; `shade: 'between'`
+ * becomes its SHADE_BETWEEN, and a relative barrier is an offset from the
+ * current spot, which is how an accumulator's band follows the price.
+ */
+export type TChartBarrier = {
+    high: number | string;
+    low?: number | string;
+    relative?: boolean;
+    shade?: 'between' | 'outside' | 'above' | 'below' | 'none_single' | 'none_double';
+    color?: string;
+    shadeColor?: string;
+    lineStyle?: 'solid' | 'dashed' | 'dotted';
+    draggable?: boolean;
+    hidePriceLines?: boolean;
+    hideOffscreenBarrier?: boolean;
+    isSingleBarrier?: boolean;
+};
+
+const NO_BARRIERS: TChartBarrier[] = [];
+
+const Chart = observer(
+    ({ show_digits_stats, barriers = NO_BARRIERS }: { show_digits_stats: boolean; barriers?: TChartBarrier[] }) => {
     const { common, ui } = useStore();
     const { chart_store, run_panel, dashboard } = useStore();
     const [isSafari, setIsSafari] = useState(false);

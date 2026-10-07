@@ -964,3 +964,42 @@
         border-bottom: 0.7rem solid #ff6444;
     }
 }
+
+/**
+ * The accumulator Stats strip along the foot of the chart, as on Deriv's: a
+ * #f2f3f4 bar reading how many ticks each recent run stayed inside the band,
+ * newest first, the run still in progress underlined.
+ */
+.manual-trader {
+    .mt-stats {
+        position: absolute;
+        left: 50%;
+        bottom: 1.6rem;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 1.6rem;
+        padding: 0.8rem 1.6rem;
+        border-radius: 0.8rem;
+        background: var(--mt-fill);
+        color: var(--mt-text);
+        font-size: 1.3rem;
+        transform: translateX(-50%);
+        white-space: nowrap;
+    }
+
+    .mt-stats__title {
+        padding-inline-end: 1.6rem;
+        border-inline-end: 1px solid #d6dadb;
+        font-weight: 700;
+    }
+
+    .mt-stats__value {
+        font-variant-numeric: tabular-nums;
+
+        &--live {
+            text-decoration: underline dotted;
+            text-underline-offset: 0.4rem;
+        }
+    }
+}

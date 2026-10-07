@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { api_base, MessageTypes } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
+import type { TChartBarrier } from '@/pages/chart/chart';
 import ChartWrapper from '@/pages/chart/chart-wrapper';
 import { getContractTypes } from '@/utils/analysis/deriv-market-data';
 import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
@@ -36,7 +37,9 @@ const MAX_TICKS = 10;
 const DIGIT_TYPES: TTradeTypeId[] = ['matches_differs', 'even_odd', 'over_under'];
 
 const money = (value: number | null, currency: string) =>
-    value === null ? '--' : `${value.toFixed(2)} ${currency}`;
+    value === null
+        ? '--'
+        : `${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 
 const percent = (value: number | null) => (value === null ? '--' : `${value.toFixed(2)}%`);
 
@@ -213,6 +216,43 @@ const ManualTrader = observer(() => {
 
     const { prices } = useProposal(trade_type, inputs, Boolean(symbol));
 
+    /**
+     * The accumulator's band, as Deriv draws it: two lines either side of the
+     * spot, the space between them shaded. Relative to the spot, so the band
+     * follows the price on every tick and is labelled with its offset -
+     * +0.488 / -0.488 - rather than an absolute price. Colours are the ones
+     * on Deriv's own screen, which are SmartCharts' defaults.
+     */
+    // Keyed on the distance itself: the quote is a new object every tick, and
+    // a new barrier each tick would make the chart redraw the band for nothing.
+    const band_distance = trade_type_id === 'accumulator' ? prices[0]?.barrier_spot_distance ?? null : null;
+    const accumulator_band = useMemo<TChartBarrier[]>(() => {
+        const distance = band_distance;
+        if (!distance) return [];
+        return [
+            {
+                high: distance,
+                low: -distance,
+                relative: true,
+                shade: 'between',
+                color: '#2c9aff',
+                shadeColor: '#2c9aff',
+                lineStyle: 'solid',
+                draggable: false,
+                hidePriceLines: false,
+                hideOffscreenBarrier: true,
+                isSingleBarrier: false,
+            },
+        ];
+    }, [band_distance]);
+
+    // How long the spot stayed inside the band on its recent runs, newest
+    // first - the strip under Deriv's accumulator chart.
+    const accumulator_stats = useMemo(
+        () => (trade_type_id === 'accumulator' ? [...(prices[0]?.ticks_stayed_in ?? [])].reverse().slice(0, 10) : []),
+        [prices, trade_type_id]
+    );
+
     /* ---------------------------------------------------------- buying */
 
     const buy = useCallback(
@@ -312,7 +352,20 @@ const ManualTrader = observer(() => {
                 <main className='mt-grid__chart'>
                     {/* The chart's built-in digit stats are bars; Deriv's trader
                         draws circles, so those are drawn over the chart here. */}
-                    <ChartWrapper prefix='manual-trader' show_digits_stats={false} />
+                    <ChartWrapper prefix='manual-trader' show_digits_stats={false} barriers={accumulator_band} />
+                    {accumulator_stats.length > 0 && (
+                        <div className='mt-stats' aria-label={localize('Accumulator stats')}>
+                            <span className='mt-panel__info' aria-hidden='true'>
+                                i
+                            </span>
+                            <b className='mt-stats__title'>{localize('Stats')}</b>
+                            {accumulator_stats.map((count, index) => (
+                                <span key={index} className={`mt-stats__value ${index === 0 ? 'mt-stats__value--live' : ''}`}>
+                                    {count}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                     {shows_digit_stats && symbol && <DigitCircles symbol={symbol} />}
                 </main>
 

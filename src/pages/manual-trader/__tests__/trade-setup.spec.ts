@@ -1,5 +1,5 @@
 import { byId, filterTradeTypes, groupTradeTypes, TRADE_TYPES } from '../trade-types';
-import { buildProposalRequest, type TProposalInputs } from '../use-proposal';
+import { buildProposalRequest, readApiError, readProposal, type TProposalInputs } from '../use-proposal';
 
 const inputs = (over: Partial<TProposalInputs> = {}): TProposalInputs => ({
     symbol: 'R_100',
@@ -147,5 +147,66 @@ describe('the trade type menu', () => {
         TRADE_TYPES.filter(type => type.tradable).forEach(type => {
             expect(type.sides[0]?.contract_type).toBeTruthy();
         });
+    });
+});
+
+/**
+ * Responses captured from Deriv's live API on 2026-10-08, so these read the
+ * real shape rather than an assumed one.
+ */
+describe('readProposal, against live Deriv responses', () => {
+    const accumulator = {
+        ask_price: 100,
+        payout: 0,
+        id: '91c01219-57d6-de36-50f3-ab0de57e3d08',
+        contract_details: {
+            barrier_spot_distance: '0.488',
+            high_barrier: '1284.888',
+            low_barrier: '1283.912',
+            maximum_payout: 3000,
+            maximum_stake: '200.00',
+            maximum_ticks: 85,
+            minimum_stake: '1.00',
+            ticks_stayed_in: [4, 32, 20, 63, 22],
+        },
+        validation_params: { max_payout: '3000.00', max_ticks: 85 },
+    };
+
+    it('reads an accumulator quote’s limits from contract_details', () => {
+        const price = readProposal(accumulator, 100);
+
+        expect(price.id).toBe('91c01219-57d6-de36-50f3-ab0de57e3d08');
+        expect(price.max_payout).toBe(3000);
+        expect(price.max_ticks).toBe(85);
+    });
+
+    it('reads the band, which Deriv sends as strings', () => {
+        const price = readProposal(accumulator, 100);
+
+        expect(price.barrier_spot_distance).toBe(0.488);
+        expect(price.high_barrier).toBe(1284.888);
+        expect(price.low_barrier).toBe(1283.912);
+    });
+
+    it('reads the runs the stats strip shows', () => {
+        expect(readProposal(accumulator, 100).ticks_stayed_in).toEqual([4, 32, 20, 63, 22]);
+    });
+
+    it('prices even/odd as Deriv quotes it', () => {
+        const price = readProposal({ ask_price: 100, payout: 195.31, id: 'af140aa4' }, 100);
+
+        expect(price.payout).toBe(195.31);
+        expect(price.percentage).toBeCloseTo(95.31, 2);
+    });
+});
+
+describe('readApiError', () => {
+    it('reads the message out of a refusal, which is not an Error', () => {
+        const refusal = { error: { code: 'AuthorizationRequired', message: 'Please log in.' } };
+        expect(readApiError(refusal, 'fallback')).toBe('Please log in.');
+    });
+
+    it('falls back only when there is nothing to read', () => {
+        expect(readApiError(undefined, 'fallback')).toBe('fallback');
     });
 });

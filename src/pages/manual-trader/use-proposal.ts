@@ -164,7 +164,7 @@ export const buildProposalRequest = (
     return request;
 };
 
-const readProposal = (proposal: any, stake: number): TProposalPrice => {
+export const readProposal = (proposal: any, stake: number): TProposalPrice => {
     const payout = num(proposal?.payout);
     const ask_price = num(proposal?.ask_price);
     // What the contract returns over what it costs. Quoting from a payout
