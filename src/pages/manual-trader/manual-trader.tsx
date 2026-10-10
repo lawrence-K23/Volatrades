@@ -22,7 +22,7 @@ import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
 import { localize } from '@deriv-com/translations';
 import DigitCircles from './digit-circles';
 import OpenPositions from './open-positions';
-import { byId, type TTradeTypeId } from './trade-types';
+import { byId, filterTradeTypes, type TTradeTypeId } from './trade-types';
 import TradeTypeIcon from './trade-type-icon';
 import TradeTypesMenu, { SideMarks } from './trade-types-menu';
 import useProposal, { buildProposalRequest, readApiError, type TProposalInputs } from './use-proposal';
@@ -57,6 +57,39 @@ const ManualTrader = observer(() => {
     const [trade_type_id, setTradeTypeId] = useState<TTradeTypeId>('accumulator');
     const [available, setAvailable] = useState<string[] | null>(null);
     const [types_open, setTypesOpen] = useState(false);
+    // On a phone the panel is Deriv's bottom sheet: collapsed to the trade type
+    // and the buy buttons, opened by its handle to show every parameter.
+    const [sheet_open, setSheetOpen] = useState(false);
+    const panel_ref = useRef<HTMLElement>(null);
+
+    /**
+     * The sheet is fixed to the bottom of a phone screen, so the chart and the
+     * site's floating buttons (AI Scanner, Risk Disclaimer) need to know how
+     * tall it is to stay clear of it - otherwise they sit on top of the buy
+     * buttons. Published as a CSS variable while this screen is open.
+     */
+    const publishSheetHeight = useCallback(() => {
+        const panel = panel_ref.current;
+        if (!panel) return;
+        const is_sheet = window.getComputedStyle(panel).position === 'fixed';
+        // Measured collapsed only: the open sheet lies over the page with a
+        // backdrop, and nothing underneath should jump about.
+        if (is_sheet && panel.classList.contains('mt-grid__panel--open')) return;
+        document.documentElement.style.setProperty('--mt-sheet-height', is_sheet ? `${panel.offsetHeight}px` : '0px');
+    }, []);
+
+    useEffect(() => {
+        const panel = panel_ref.current;
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publishSheetHeight);
+        if (panel) observer?.observe(panel);
+        window.addEventListener('resize', publishSheetHeight);
+        publishSheetHeight();
+        return () => {
+            observer?.disconnect();
+            window.removeEventListener('resize', publishSheetHeight);
+            document.documentElement.style.removeProperty('--mt-sheet-height');
+        };
+    }, [publishSheetHeight]);
 
     const [duration, setDuration] = useState(1);
     const [digit, setDigit] = useState(2);
@@ -376,6 +409,29 @@ const ManualTrader = observer(() => {
     // A quote may fail on either side; show the first complaint either made.
     const quote_error = prices.find(price => price?.error)?.error ?? null;
 
+    const sheet_summary: { label: string; value: string }[] = [
+        field('growth_rate') && { label: localize('Growth rate'), value: `${Math.round(growth_rate * 100)}%` },
+        field('multiplier') && { label: localize('Multiplier'), value: `x${multiplier}` },
+        field('duration') && {
+            label: localize('Duration'),
+            value: `${duration} ${duration === 1 ? localize('tick') : localize('ticks')}`,
+        },
+        field('digit_prediction') && { label: localize('Last digit prediction'), value: String(digit) },
+        field('barrier_offset') && { label: localize('Barrier'), value: barrier_offset },
+        {
+            label: basis === 'payout' && field('basis_toggle') ? localize('Payout') : localize('Stake'),
+            value: money(Number(stake) || 0, currency),
+        },
+        field('take_profit') && {
+            label: localize('Take profit'),
+            value: use_take_profit && take_profit ? money(Number(take_profit), currency) : '-',
+        },
+    ].filter(Boolean) as { label: string; value: string }[];
+
+    // Measured again whenever what the collapsed sheet holds changes, without
+    // waiting on the resize observer, which only runs on a painted frame.
+    useEffect(publishSheetHeight, [publishSheetHeight, trade_type_id, sheet_open, sheet_summary.length]);
+
     return (
         <div className='manual-trader'>
             {/* Deriv's own opening loader, as deriv-dtrader.vercel.app shows it. */}
@@ -396,6 +452,27 @@ const ManualTrader = observer(() => {
                     </div>
                 </div>
             )}
+
+            {/*
+             * The trade types as a row of chips across the top, as Deriv's trader
+             * shows them on a phone. Hidden on wider screens, which keep the menu.
+             */}
+            <div className='mt-chips' role='tablist' aria-label={localize('Trade types')}>
+                {filterTradeTypes('All', '', available)
+                    .filter(type => type.tradable)
+                    .map(type => (
+                        <button
+                            key={type.id}
+                            type='button'
+                            role='tab'
+                            aria-selected={type.id === trade_type_id}
+                            className={`mt-chips__chip ${type.id === trade_type_id ? 'mt-chips__chip--selected' : ''}`}
+                            onClick={() => setTradeTypeId(type.id)}
+                        >
+                            {localize(type.label)}
+                        </button>
+                    ))}
+            </div>
 
             <div className='mt-grid'>
                 <aside className='mt-grid__left'>
@@ -428,7 +505,45 @@ const ManualTrader = observer(() => {
                     {shows_digit_stats && symbol && <DigitCircles symbol={symbol} />}
                 </main>
 
-                <aside className='mt-grid__panel'>
+                {sheet_open && (
+                    <button
+                        type='button'
+                        className='mt-sheet__backdrop'
+                        aria-label={localize('Show fewer settings')}
+                        onClick={() => setSheetOpen(false)}
+                    />
+                )}
+
+                <aside ref={panel_ref} className={`mt-grid__panel ${sheet_open ? 'mt-grid__panel--open' : ''}`}>
+                    {/* The sheet's handle, shown on a phone only. */}
+                    <button
+                        type='button'
+                        className='mt-sheet__handle'
+                        aria-label={sheet_open ? localize('Show fewer settings') : localize('Show all settings')}
+                        aria-expanded={sheet_open}
+                        onClick={() => setSheetOpen(open => !open)}
+                    >
+                        <span className='mt-sheet__handle-bar' />
+                    </button>
+
+                    {/*
+                     * The collapsed sheet's parameters, as Deriv's trader lists
+                     * them on a phone: a label over its value, a tap opening the
+                     * full sheet to change it. Phone only.
+                     */}
+                    <div className='mt-sheet__summary'>
+                        {sheet_summary.map(item => (
+                            <button
+                                key={item.label}
+                                type='button'
+                                className='mt-sheet__param'
+                                onClick={() => setSheetOpen(true)}
+                            >
+                                <span className='mt-sheet__param-label'>{item.label}</span>
+                                <span className='mt-sheet__param-value'>{item.value}</span>
+                            </button>
+                        ))}
+                    </div>
                     <a
                         className='mt-panel__learn'
                         href='https://deriv.com/trade-types/options/'
@@ -449,7 +564,12 @@ const ManualTrader = observer(() => {
 
                     {field('growth_rate') && (
                         <div className='mt-panel__block'>
-                            <div className='mt-panel__label'>{localize('Growth rate')}</div>
+                            <div className='mt-panel__title'>
+                                <span>{localize('Growth rate')}</span>
+                                <span className='mt-panel__info' aria-hidden='true'>
+                                    i
+                                </span>
+                            </div>
                             <div className='mt-panel__pills'>
                                 {GROWTH_RATES.map(rate => (
                                     <button
@@ -569,7 +689,7 @@ const ManualTrader = observer(() => {
                                 </button>
                             </div>
                         ) : (
-                            <div className='mt-panel__label'>{localize('Stake')}</div>
+                            <div className='mt-panel__title mt-panel__title--plain'>{localize('Stake')}</div>
                         )}
 
                         <div className='mt-panel__stepper'>
@@ -610,6 +730,9 @@ const ManualTrader = observer(() => {
                                 onChange={event => setUseTakeProfit(event.target.checked)}
                             />
                             <span>{localize('Take profit')}</span>
+                            <span className='mt-panel__info mt-panel__info--end' aria-hidden='true'>
+                                i
+                            </span>
                             {use_take_profit && (
                                 <input
                                     className='mt-panel__input mt-panel__input--small'
