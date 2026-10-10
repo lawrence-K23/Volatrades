@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { api_base, MessageTypes } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
-import type { TChartBarrier } from '@/pages/chart/chart';
+import type { TChartMarker } from '@/pages/chart/chart';
 import ChartWrapper from '@/pages/chart/chart-wrapper';
 import { getContractTypes } from '@/utils/analysis/deriv-market-data';
 import { getVolatilitySymbols } from '@/utils/analysis/market-scanner';
@@ -33,6 +33,10 @@ type TSymbol = { symbol: string; display_name: string };
 const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const GROWTH_RATES = [0.01, 0.02, 0.03, 0.04, 0.05];
 const MULTIPLIERS = [100, 200, 300, 400, 500];
+// DTrader's marker colours (light theme): a range with no contract in it, and
+// the tick it was measured from.
+const ACCU_RANGE_COLOR = '#2c9aff';
+const ACCU_TICK_COLOR = '#333333';
 const MAX_TICKS = 10;
 const DIGIT_TYPES: TTradeTypeId[] = ['matches_differs', 'even_odd', 'over_under'];
 
@@ -296,28 +300,47 @@ const ManualTrader = observer(() => {
         if (has_first_quote && min_elapsed) setIsReady(true);
     }, [has_first_quote, min_elapsed]);
 
-    // Keyed on the distance itself: the quote is a new object every tick, and
-    // a new barrier each tick would make the chart redraw the band for nothing.
-    const band_distance = trade_type_id === 'accumulator' ? prices[0]?.barrier_spot_distance ?? null : null;
-    const accumulator_band = useMemo<TChartBarrier[]>(() => {
-        const distance = band_distance;
-        if (!distance) return [];
+    /**
+     * The accumulator's range, drawn as DTrader draws it: not two lines across
+     * the whole chart, but its `AccumulatorContract` marker - the high and
+     * low barrier starting from the tick they were measured on, each labelled
+     * with its distance from the spot (+0.473 / -0.473), and that tick marked.
+     * Colours are DTrader's: #2c9aff for a range with no contract in it, and
+     * #333333 for the tick. Keyed on the values, since the quote is a new
+     * object on every tick even when nothing it says has changed.
+     */
+    const is_accumulator = trade_type_id === 'accumulator';
+    const accu_high = is_accumulator ? prices[0]?.high_barrier ?? null : null;
+    const accu_low = is_accumulator ? prices[0]?.low_barrier ?? null : null;
+    const accu_distance = is_accumulator ? prices[0]?.barrier_spot_distance ?? null : null;
+    const accu_epoch = is_accumulator ? prices[0]?.spot_time ?? null : null;
+    const accumulator_markers = useMemo<TChartMarker[]>(() => {
+        if (accu_high === null || accu_low === null || accu_epoch === null) return [];
+        const distance = accu_distance === null ? '' : String(accu_distance);
         return [
             {
-                high: distance,
-                low: -distance,
-                relative: true,
-                shade: 'between',
-                color: '#2c9aff',
-                shadeColor: '#2c9aff',
-                lineStyle: 'solid',
-                draggable: false,
-                hidePriceLines: false,
-                hideOffscreenBarrier: true,
-                isSingleBarrier: false,
+                type: 'AccumulatorContract',
+                markers: [
+                    {
+                        epoch: accu_epoch,
+                        quote: accu_high,
+                        type: 'highBarrier',
+                        color: ACCU_RANGE_COLOR,
+                        text: distance ? `+${distance}` : '',
+                    },
+                    {
+                        epoch: accu_epoch,
+                        quote: accu_low,
+                        type: 'lowBarrier',
+                        color: ACCU_RANGE_COLOR,
+                        text: distance ? `-${distance}` : '',
+                    },
+                    { epoch: accu_epoch, type: 'previousTick', color: ACCU_TICK_COLOR },
+                ],
+                props: { hasPersistentBorders: false },
             },
         ];
-    }, [band_distance]);
+    }, [accu_high, accu_low, accu_distance, accu_epoch]);
 
     // How long the spot stayed inside the band on its recent runs, newest
     // first - the strip under Deriv's accumulator chart.
@@ -488,7 +511,12 @@ const ManualTrader = observer(() => {
                 <main className='mt-grid__chart'>
                     {/* The chart's built-in digit stats are bars; Deriv's trader
                         draws circles, so those are drawn over the chart here. */}
-                    <ChartWrapper prefix='manual-trader' show_digits_stats={false} barriers={accumulator_band} />
+                    <ChartWrapper
+                        prefix='manual-trader'
+                        show_digits_stats={false}
+                        contracts_array={accumulator_markers}
+                        is_accumulator={is_accumulator}
+                    />
                     {accumulator_stats.length > 0 && (
                         <div className='mt-stats' aria-label={localize('Accumulator stats')}>
                             <span className='mt-panel__info' aria-hidden='true'>

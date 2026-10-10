@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api_base } from '@/external/bot-skeleton';
 import { localize } from '@deriv-com/translations';
+import useConnection, { currentConnection, type TConnection } from './use-connection';
 
 type TPosition = {
     contract_id: string;
@@ -30,6 +31,9 @@ const OpenPositions = ({ currency }: { currency: string }) => {
 
     const subscription_id = useRef<string | null>(null);
     const listener = useRef<((evt: MessageEvent) => void) | null>(null);
+    const listening_on = useRef<TConnection | null>(null);
+    // Subscribes again whenever the app moves to a new socket.
+    const connection = useConnection();
 
     useEffect(() => {
         let cancelled = false;
@@ -70,7 +74,8 @@ const OpenPositions = ({ currency }: { currency: string }) => {
         };
 
         listener.current = onMessage;
-        api_base.api?.connection?.addEventListener('message', onMessage);
+        listening_on.current = currentConnection();
+        listening_on.current?.addEventListener('message', onMessage);
 
         (async () => {
             try {
@@ -84,20 +89,20 @@ const OpenPositions = ({ currency }: { currency: string }) => {
 
         return () => {
             cancelled = true;
-            if (subscription_id.current) {
-                try {
-                    api_base.api?.send({ forget: subscription_id.current });
-                } catch {
-                    /* closes with the socket */
-                }
-                subscription_id.current = null;
+            // Forgotten only on the socket it was made on; a closed one has
+            // already dropped it.
+            if (subscription_id.current && listening_on.current === currentConnection()) {
+                const id = subscription_id.current;
+                Promise.resolve(api_base.api?.send({ forget: id })).catch(() => undefined);
             }
+            subscription_id.current = null;
             if (listener.current) {
-                api_base.api?.connection?.removeEventListener('message', listener.current);
+                listening_on.current?.removeEventListener('message', listener.current);
                 listener.current = null;
             }
+            listening_on.current = null;
         };
-    }, []);
+    }, [connection]);
 
     const sell = useCallback(async (contract_id: string) => {
         setSelling(contract_id);

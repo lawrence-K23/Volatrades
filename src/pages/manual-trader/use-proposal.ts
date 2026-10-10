@@ -10,6 +10,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api_base } from '@/external/bot-skeleton';
 import type { TTradeType } from './trade-types';
+import useConnection, { currentConnection, type TConnection } from './use-connection';
+
+// Every market quoted here ticks at least every two seconds, so a stream that
+// has said nothing for this long has stopped, whatever the socket says.
+const STALE_AFTER_MS = 10000;
 
 export type TProposalPrice = {
     /** Proposal id, which is what a buy is placed against. */
@@ -31,6 +36,8 @@ export type TProposalPrice = {
     /** Accumulators: the band itself, recalculated on every tick. */
     high_barrier: number | null;
     low_barrier: number | null;
+    /** Accumulators: the tick the band was measured from, where Deriv starts drawing it. */
+    spot_time: number | null;
     /** Accumulators: how long the spot stayed inside the band, run by run. */
     ticks_stayed_in: number[];
     error: string | null;
@@ -48,6 +55,7 @@ const EMPTY: TProposalPrice = {
     barrier_spot_distance: null,
     high_barrier: null,
     low_barrier: null,
+    spot_time: null,
     ticks_stayed_in: [],
     error: null,
 };
@@ -191,6 +199,7 @@ export const readProposal = (proposal: any, stake: number): TProposalPrice => {
         ]),
         high_barrier: pick(proposal, [['contract_details', 'high_barrier']]),
         low_barrier: pick(proposal, [['contract_details', 'low_barrier']]),
+        spot_time: pick(proposal, [['spot_time'], ['contract_details', 'last_tick_epoch']]),
         ticks_stayed_in: Array.isArray(proposal?.contract_details?.ticks_stayed_in)
             ? proposal.contract_details.ticks_stayed_in.map(Number)
             : [],
@@ -213,22 +222,49 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
     const by_subscription = useRef<Record<string, number>>({});
     const stake_ref = useRef(inputs.stake);
     stake_ref.current = inputs.stake;
+    // The socket the listener is on, which is not necessarily the app's
+    // current one once it has reconnected.
+    const listening_on = useRef<TConnection | null>(null);
+    const last_frame = useRef(0);
+
+    const connection = useConnection();
+    const [retry, setRetry] = useState(0);
 
     const teardown = useCallback(() => {
-        subscriptions.current.forEach(id => {
-            try {
-                api_base.api?.send({ forget: id });
-            } catch {
-                /* the stream closes with the socket anyway */
-            }
-        });
+        // Forgotten only on the socket they were made on; a new socket never
+        // had them, and a closed one has already dropped them.
+        if (listening_on.current && listening_on.current === currentConnection()) {
+            subscriptions.current.forEach(id => {
+                Promise.resolve(api_base.api?.send({ forget: id })).catch(() => undefined);
+            });
+        }
         subscriptions.current = [];
         by_subscription.current = {};
         if (listener.current) {
-            api_base.api?.connection?.removeEventListener('message', listener.current);
+            listening_on.current?.removeEventListener('message', listener.current);
             listener.current = null;
         }
+        listening_on.current = null;
     }, []);
+
+    // Re-subscribes a stream that has gone quiet.
+    useEffect(() => {
+        if (!enabled) return undefined;
+        const check = () => {
+            if (subscriptions.current.length && Date.now() - last_frame.current > STALE_AFTER_MS) {
+                setRetry(value => value + 1);
+            }
+        };
+        const timer = window.setInterval(check, STALE_AFTER_MS / 2);
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') check();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [enabled]);
 
     // One key for everything a quote depends on, so the proposals are replaced
     // when - and only when - something about the trade actually changed.
@@ -246,6 +282,8 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
         inputs.stop_loss,
         inputs.deal_cancellation,
         enabled,
+        connection,
+        retry,
     ]);
 
     useEffect(() => {
@@ -270,6 +308,7 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
                 const id = data?.subscription?.id;
                 const index = id ? by_subscription.current[id] : undefined;
                 if (index === undefined) return;
+                last_frame.current = Date.now();
 
                 setPrices(previous => {
                     const next = [...previous];
@@ -284,7 +323,9 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
         };
 
         listener.current = onMessage;
-        api_base.api?.connection?.addEventListener('message', onMessage);
+        listening_on.current = currentConnection();
+        listening_on.current?.addEventListener('message', onMessage);
+        last_frame.current = Date.now();
 
         const sides = trade_type.sides.filter(Boolean) as { label: string; contract_type: string }[];
 
@@ -310,6 +351,7 @@ export const useProposal = (trade_type: TTradeType, inputs: TProposalInputs, ena
                         subscriptions.current.push(String(subscription_id));
                         by_subscription.current[String(subscription_id)] = index;
                     }
+                    last_frame.current = Date.now();
 
                     setPrices(previous => {
                         const next = [...previous];

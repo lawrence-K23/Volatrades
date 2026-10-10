@@ -188,6 +188,19 @@ describe('readProposal, against live Deriv responses', () => {
         expect(price.low_barrier).toBe(1283.912);
     });
 
+    it('reads the tick the band was measured from, where the chart starts drawing it', () => {
+        // Captured live on 2026-10-10: spot_time sits on the proposal itself,
+        // and contract_details repeats it as last_tick_epoch.
+        expect(readProposal({ ...accumulator, spot_time: 1791628771 }, 100).spot_time).toBe(1791628771);
+        expect(
+            readProposal(
+                { ...accumulator, contract_details: { ...accumulator.contract_details, last_tick_epoch: 1791628771 } },
+                100
+            ).spot_time
+        ).toBe(1791628771);
+        expect(readProposal(accumulator, 100).spot_time).toBeNull();
+    });
+
     it('reads the runs the stats strip shows', () => {
         expect(readProposal(accumulator, 100).ticks_stayed_in).toEqual([4, 32, 20, 63, 22]);
     });

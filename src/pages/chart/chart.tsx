@@ -32,10 +32,42 @@ export type TChartBarrier = {
     isSingleBarrier?: boolean;
 };
 
+/**
+ * A contract marker, in the shape Deriv's trader hands SmartCharts as
+ * `contracts_array`. An accumulator's range is one of these - type
+ * `AccumulatorContract`, with `highBarrier`, `lowBarrier` and `previousTick`
+ * points - and the chart draws it the way DTrader shows it.
+ */
+export type TChartMarker = {
+    type: string;
+    markers: {
+        epoch: number;
+        quote?: number;
+        type: string;
+        color?: string;
+        text?: string;
+    }[];
+    props?: Record<string, unknown>;
+};
+
+type TChartProps = {
+    show_digits_stats: boolean;
+    barriers?: TChartBarrier[];
+    contracts_array?: TChartMarker[];
+    /** Dresses the chart as DTrader does for accumulators. */
+    is_accumulator?: boolean;
+};
+
 const NO_BARRIERS: TChartBarrier[] = [];
+const NO_MARKERS: TChartMarker[] = [];
+
+// DTrader's own values, from its CHART_CONSTANTS: the space kept right of the
+// last tick so the range has room to show, and on a phone the bars kept left.
+const ACCUMULATOR_WHITESPACE = 190;
+const ACCUMULATOR_MIN_LEFT_BARS_MOBILE = 3;
 
 const Chart = observer(
-    ({ show_digits_stats, barriers = NO_BARRIERS }: { show_digits_stats: boolean; barriers?: TChartBarrier[] }) => {
+    ({ show_digits_stats, barriers = NO_BARRIERS, contracts_array = NO_MARKERS, is_accumulator = false }: TChartProps) => {
     const { common, ui } = useStore();
     const { chart_store, run_panel, dashboard } = useStore();
     const [isSafari, setIsSafari] = useState(false);
@@ -66,6 +98,12 @@ const Chart = observer(
         language: common.current_language.toLowerCase(),
         position: ui.is_chart_layout_default ? 'bottom' : 'left',
         theme: ui.is_dark_mode_on ? 'dark' : 'light',
+        ...(is_accumulator
+            ? {
+                  whitespace: ACCUMULATOR_WHITESPACE,
+                  minimumLeftBars: isMobile ? ACCUMULATOR_MIN_LEFT_BARS_MOBILE : undefined,
+              }
+            : {}),
     };
 
     useEffect(() => {
@@ -120,6 +158,7 @@ const Chart = observer(
                 id={`dbot-${symbol}`}
                 key={`chart-${symbol}`}
                 barriers={barriers}
+                contracts_array={contracts_array}
                 showLastDigitStats={show_digits_stats}
                 chartControlsWidgets={null}
                 enabledChartFooter={false}
@@ -135,7 +174,11 @@ const Chart = observer(
                 chartType={chart_type}
                 isMobile={isMobile}
                 enabledNavigationWidget={isDesktop}
-                granularity={granularity as TGranularity}
+                // Accumulators trade on ticks, so DTrader keeps their chart on
+                // the tick chart and zooms the price axis out to fit the range.
+                granularity={(is_accumulator ? 0 : granularity) as TGranularity}
+                allowTickChartTypeOnly={is_accumulator}
+                should_zoom_out_on_yaxis={is_accumulator}
                 getQuotes={getQuotes}
                 subscribeQuotes={subscribeQuotes}
                 unsubscribeQuotes={unsubscribeQuotes}

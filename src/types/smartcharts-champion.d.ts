@@ -179,6 +179,7 @@ declare module '@deriv-com/smartcharts-champion' {
         clearChart?: () => void;
         shouldGetQuotes?: boolean;
         allowTickChartTypeOnly?: boolean;
+        should_zoom_out_on_yaxis?: boolean;
         shouldFetchTradingTimes?: boolean;
         shouldDrawTicksFromContractInfo?: boolean;
         allTicks?: any;
