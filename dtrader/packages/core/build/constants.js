@@ -81,7 +81,10 @@ const rules = (is_test_env = false) => [
     },
     {
         test: /\.html$/,
-        exclude: /node_modules/,
+        // [VolaTrades] The page template (src/index.html) is left to
+        // html-webpack-plugin, which fills in its <%= %> placeholders; run
+        // through html-loader they were shipped to the browser as raw text.
+        exclude: [/node_modules/, path.resolve(__dirname, '../src/index.html')],
         use: html_loaders,
     },
     {
