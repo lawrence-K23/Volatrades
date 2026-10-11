@@ -5,28 +5,23 @@ import { createRoot } from 'react-dom/client';
 
 import App from 'App/app.jsx';
 import initStore from 'App/initStore';
-// eslint-disable-next-line
-import registerServiceWorker from 'Utils/PWA';
-
 import AppNotificationMessages from './App/Containers/app-notification-messages.jsx';
 
-// [VolaTrades] No service worker when framed inside VolaTrades: its cache and
-// its reload-on-update would act on a page the host is meant to control.
-const is_embedded = (() => {
-    try {
-        return window.self !== window.top;
-    } catch {
-        return true;
-    }
-})();
-
-if (is_embedded) {
-    // Nothing to register.
-} else if (
-    !!window?.localStorage.getItem?.('debug_service_worker') || // To enable local service worker related development
-    !window.location.hostname.startsWith('localhost')
-) {
-    registerServiceWorker();
+// [VolaTrades] No service worker in this build. It cached DTrader's code
+// "cache first", and trader.js keeps the same name between deploys, so an
+// installed worker kept serving an old trader - and it also controls the
+// Manual Trader frame. Remove any worker an earlier visit installed.
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker
+        .getRegistrations()
+        .then(registrations => {
+            registrations
+                .filter(registration => registration.scope.includes('/dtrader/'))
+                .forEach(registration => registration.unregister());
+        })
+        .catch(() => {
+            /* nothing to clean up */
+        });
 }
 
 const initApp = async () => {

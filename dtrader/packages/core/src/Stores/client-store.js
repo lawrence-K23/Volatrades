@@ -15,7 +15,7 @@ import {
     getHostLoginid,
     isEmbedded,
     requestHostAccountSwitch,
-    requestHostLogout,
+    requestHostLogin,
 } from '@deriv/shared';
 import { getInitialLanguage, localize } from '@deriv-com/translations';
 
@@ -556,10 +556,12 @@ export default class ClientStore extends BaseStore {
 
     async logout() {
         // [VolaTrades] Embedded, logging out is VolaTrades' job: ours would
-        // clear the storage the whole site's session lives in.
+        // clear the storage the whole site's session lives in. Hand it over
+        // as a session check, so an auth error inside the trader never logs
+        // the user out of VolaTrades - they log out from VolaTrades' header.
         if (isEmbedded()) {
-            requestHostLogout();
-            return { logout: 1 };
+            requestHostLogin();
+            return { logout: 0 };
         }
         const response = await requestRestLogout();
 

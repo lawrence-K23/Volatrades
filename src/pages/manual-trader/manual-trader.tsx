@@ -11,17 +11,22 @@
  * token, switches account or logs out by itself - it posts a message here and
  * this page does it the way the rest of the site does:
  *
- *   session-expired  renew the token if possible, else start the Deriv login
+ *   session-expired  renew the token if needed and reload the frame; only a
+ *                    session that is really gone ends in VolaTrades' own
+ *                    logout, never in an outside login page
  *   refresh-token    renew the token, then answer so the frame can retry
  *   switch-account   select that account, as the header's switcher does
  *   logout           log out, as the header's button does
  *
  * When the selected account changes (here or in the header), the frame sees
  * the change to localStorage and reloads itself onto the new account.
+ *
+ * The frame is sandboxed without top-navigation, so nothing inside DTrader
+ * can take the whole page away from VolaTrades. Links to other sites
+ * (deposit, account hub) open in a new tab instead.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { generateOAuthURL } from '@/components/shared';
 import { api_base } from '@/external/bot-skeleton/services/api/api-base';
 import { getAuthInfo } from '@/external/deriv-core';
 import { useLogout } from '@/hooks/useLogout';
@@ -36,6 +41,21 @@ const EMBED_SOURCE = 'volatrades-dtrader';
 const DTRADER_URL = '/dtrader/';
 /** How long to wait for DTrader to load before offering a retry. */
 const LOAD_TIMEOUT_MS = 45000;
+/** At most one automatic reload in this window, so a failing session cannot loop. */
+const RELOAD_COOLDOWN_MS = 60000;
+/**
+ * What the frame may do. No allow-top-navigation: DTrader cannot navigate the
+ * VolaTrades page. allow-same-origin keeps the shared login (localStorage);
+ * the popup flags let deposit/help links open in a normal new tab.
+ */
+const FRAME_SANDBOX =
+    'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
+
+/** True while VolaTrades holds an access token that has not run out. */
+const hasLiveSession = () => {
+    const auth = getAuthInfo();
+    return !!auth?.access_token;
+};
 
 type TEmbedMessage = {
     source: typeof EMBED_SOURCE;
@@ -55,21 +75,20 @@ const ManualTrader = observer(() => {
     const frame_ref = useRef<HTMLIFrameElement>(null);
     const [frame_key, setFrameKey] = useState(0);
     const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+    const last_auto_reload = useRef(0);
 
     const reloadFrame = useCallback(() => {
         setStatus('loading');
         setFrameKey(key => key + 1);
     }, []);
 
-    const startLogin = useCallback(async () => {
-        try {
-            const url = await generateOAuthURL();
-            if (url) window.location.replace(url);
-        } catch (error) {
-            // eslint-disable-next-line no-console
-            console.error('[Manual Trader] Could not start login:', error);
-        }
-    }, []);
+    /** Reload the frame on a fresh session - once per cooldown, never in a loop. */
+    const autoReloadFrame = useCallback(() => {
+        const now = Date.now();
+        if (now - last_auto_reload.current < RELOAD_COOLDOWN_MS) return;
+        last_auto_reload.current = now;
+        reloadFrame();
+    }, [reloadFrame]);
 
     const replyToFrame = useCallback((payload: Record<string, unknown>) => {
         frame_ref.current?.contentWindow?.postMessage(
@@ -93,9 +112,13 @@ const ManualTrader = observer(() => {
                     break;
                 }
                 case 'session-expired': {
-                    const usable = await ensureFreshAccessToken().catch(() => false);
-                    if (usable && getAuthInfo()) reloadFrame();
-                    else startLogin();
+                    // The user is signed in to VolaTrades: renew if needed and
+                    // give the trader the session again. Signing in happens on
+                    // VolaTrades itself; the trader never sends anyone to an
+                    // outside login page.
+                    await ensureFreshAccessToken().catch(() => false);
+                    if (hasLiveSession()) autoReloadFrame();
+                    else handleLogout(); // the session is truly gone: VolaTrades' own logout
                     break;
                 }
                 case 'switch-account': {
@@ -123,7 +146,7 @@ const ManualTrader = observer(() => {
 
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, [client, run_panel, handleLogout, reloadFrame, replyToFrame, startLogin]);
+    }, [client, run_panel, handleLogout, reloadFrame, replyToFrame, autoReloadFrame]);
 
     // A frame that never finishes loading gets a retry button instead of a
     // blank tab forever.
@@ -172,6 +195,7 @@ const ManualTrader = observer(() => {
                 src={DTRADER_URL}
                 title={localize('Manual Trader')}
                 onLoad={onFrameLoad}
+                sandbox={FRAME_SANDBOX}
                 allow='clipboard-write; fullscreen'
             />
         </div>
