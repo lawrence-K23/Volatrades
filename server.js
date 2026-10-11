@@ -152,6 +152,13 @@ const server = http.createServer((req, res) => {
         return send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
     }
 
+    // The embedded DTrader may be framed by VolaTrades itself and nothing
+    // else - the server-side replacement for its old script anti-clickjack.
+    if (/^\/dtrader(\/|$)/.test((req.url || '/').split('?')[0])) {
+        res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    }
+
     const file = resolveFile(req.url || '/');
     if (file) return serve(req, res, file);
 
@@ -160,7 +167,9 @@ const server = http.createServer((req, res) => {
     // missing file under its asset folders is a real 404, not a route.
     const url_path = (req.url || '/').split('?')[0];
     if (/^\/dtrader(\/|$)/.test(url_path)) {
-        const is_asset = /^\/dtrader\/(js|css|trader|reports|public|assets|brand)\//.test(url_path);
+        // A path ending in a file extension is a missing file (a real 404);
+        // anything else - /dtrader/reports/statement - is one of its routes.
+        const is_asset = /\.[a-z0-9]+$/i.test(url_path);
         const dtrader_index = path.join(ROOT, 'dtrader', 'index.html');
         if (!is_asset && fs.existsSync(dtrader_index)) return serve(req, res, dtrader_index, 200);
         return send(res, 404, 'Not found', { 'Content-Type': 'text/plain; charset=utf-8' });

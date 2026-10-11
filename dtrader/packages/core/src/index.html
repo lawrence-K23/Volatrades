@@ -72,33 +72,11 @@
             }
         </script>
         <!-- End theme styles and mobile app loader control -->
-        <!-- Start Anti-Clickjack -->
-        <style id="antiClickjack">
-            body {
-                display: none !important;
-            }
-        </style>
-        <script type="text/javascript">
-            // [VolaTrades] Framing is allowed only by a page on this same
-            // origin - VolaTrades' Manual Trader tab. Any other site framing
-            // this app is still sent away (reading top.location throws for a
-            // cross-origin parent, which counts as "not ours").
-            var is_same_origin_frame = false;
-            if (self !== top) {
-                try {
-                    is_same_origin_frame = top.location.origin === self.location.origin;
-                } catch (e) {
-                    is_same_origin_frame = false;
-                }
-            }
-            if (self === top || is_same_origin_frame) {
-                var antiClickjack = document.getElementById('antiClickjack');
-                antiClickjack.parentNode.removeChild(antiClickjack);
-            } else {
-                top.location = self.location;
-            }
-        </script>
-        <!-- End Anti-Clickjack -->
+        <!-- [VolaTrades] The template's script anti-clickjack (hide the page,
+             reveal it only when not framed) is removed: it blanked the trader
+             inside VolaTrades' Manual Trader tab. Framing is restricted by the
+             server instead - server.js sends frame-ancestors 'self' for
+             /dtrader/, so only VolaTrades itself can frame this page. -->
 
         <noscript>Your browser does not support JavaScript!</noscript>
 
