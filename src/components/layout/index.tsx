@@ -1,0 +1,269 @@
+// @ts-nocheck — vendored bot code with known upstream type gaps; see AGENTS.md
+import { useCallback, useEffect, useState } from 'react';
+import clsx from 'clsx';
+import { observer } from 'mobx-react-lite';
+import { Outlet } from 'react-router-dom';
+import { api_base } from '@/external/bot-skeleton';
+import { getAuthInfo } from '@/external/deriv-core';
+import { useApiBase } from '@/hooks/useApiBase';
+import { useStore } from '@/hooks/useStore';
+import { ensureFreshAccessToken, needsTokenRefresh, resolveActiveLoginid } from '@/utils/auth-session';
+import { isPreviewMode } from '@/utils/is-preview-mode';
+import { useDevice } from '@deriv-com/ui';
+import LandingPage from '../landing/LandingPage';
+import SplashScreen from '../landing/SplashScreen';
+import RiskDisclaimer from '../risk-disclaimer/RiskDisclaimer';
+import { crypto_currencies_display_order, fiat_currencies_display_order } from '../shared';
+import Footer from './footer';
+import AppHeader from './header';
+import Body from './main-body';
+import './layout.scss';
+
+const SPLASH_KEY = 'te-splash-shown';
+
+/**
+ * The dev server skips the login gate, so the tools open straight away while
+ * working. It needs both a development build and a local hostname, so a
+ * production bundle always demands a Deriv login - even if served from
+ * localhost. Add ?landing=1 to see the front page as a visitor does.
+ */
+const isLocalDevBypass = () => {
+    if (process.env.NODE_ENV === 'production') return false;
+    const is_local = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+    return is_local && !new URLSearchParams(window.location.search).has('landing');
+};
+
+/**
+ * A stored, unexpired Deriv OAuth session.
+ *
+ * The active loginid is repaired from the stored account list when it is
+ * missing: a login whose token landed but whose account request failed used to
+ * count as no session at all and sent the user back to the landing page.
+ */
+const hasStoredSession = () => {
+    try {
+        return Boolean(getAuthInfo()?.access_token) && Boolean(resolveActiveLoginid());
+    } catch {
+        return false;
+    }
+};
+
+const Layout = observer(() => {
+    const { isDesktop } = useDevice();
+    const store = useStore();
+    const { activeLoginid } = useApiBase();
+
+    // Splash once per browser session; also held while an OAuth login completes.
+    const [splashDone, setSplashDone] = useState(() => {
+        try {
+            return sessionStorage.getItem(SPLASH_KEY) === '1';
+        } catch {
+            return false;
+        }
+    });
+    const [oauthPending, setOauthPending] = useState(() => new URLSearchParams(window.location.search).has('code'));
+
+    // A spent access token is renewed before the gate judges the session, so a
+    // user whose token simply timed out is not shown the landing page.
+    const [sessionRenewing, setSessionRenewing] = useState(() => needsTokenRefresh());
+
+    useEffect(() => {
+        if (!sessionRenewing) return undefined;
+        let cancelled = false;
+        ensureFreshAccessToken().finally(() => {
+            if (!cancelled) setSessionRenewing(false);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [sessionRenewing]);
+
+    // And again while the session is in use, so a long day of trading does not
+    // end with a sudden trip to the landing page.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (needsTokenRefresh()) ensureFreshAccessToken();
+        }, 60000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const finishSplash = useCallback(() => {
+        try {
+            sessionStorage.setItem(SPLASH_KEY, '1');
+        } catch {
+            /* nothing to do */
+        }
+        setSplashDone(true);
+    }, []);
+
+    useEffect(() => {
+        if (!oauthPending) return undefined;
+        if (activeLoginid) {
+            setOauthPending(false);
+            return undefined;
+        }
+        // The callback in App.tsx stores the session, then strips ?code from the URL.
+        const poll = setInterval(() => {
+            const code_gone = !new URLSearchParams(window.location.search).has('code');
+            if (code_gone && hasStoredSession()) setOauthPending(false);
+        }, 500);
+        const timeout = setTimeout(() => setOauthPending(false), 30000);
+        return () => {
+            clearInterval(poll);
+            clearTimeout(timeout);
+        };
+    }, [oauthPending, activeLoginid]);
+    const is_quick_strategy_active = store?.quick_strategy?.is_open;
+    const isCallbackPage = window.location.pathname === '/callback';
+
+    const checkClientAccount = JSON.parse(localStorage.getItem('clientAccounts') ?? '{}');
+    const getQueryParams = new URLSearchParams(window.location.search);
+    const currency = getQueryParams.get('account') ?? '';
+    const accountsList = JSON.parse(localStorage.getItem('accountsList') ?? '{}');
+    const isClientAccountsPopulated = Object.keys(accountsList).length > 0;
+    const ifClientAccountHasCurrency =
+        Object.values(checkClientAccount).some((account: any) => account.currency === currency) ||
+        currency === 'demo' ||
+        currency === '';
+    const [clientHasCurrency, setClientHasCurrency] = useState(ifClientAccountHasCurrency);
+    const [isAuthenticating, setIsAuthenticating] = useState(true); // Start with true to prevent flashing
+
+    // Expose setClientHasCurrency to window for global access
+    useEffect(() => {
+        (window as any).setClientHasCurrency = setClientHasCurrency;
+
+        return () => {
+            delete (window as any).setClientHasCurrency;
+        };
+    }, []);
+
+    const validCurrencies = [...fiat_currencies_display_order, ...crypto_currencies_display_order];
+    const query_currency = (getQueryParams.get('account') ?? '')?.toUpperCase();
+    const isCurrencyValid = validCurrencies.includes(query_currency);
+    const api_accounts: any[][] = [];
+    let subscription: { unsubscribe: () => void };
+
+    const validateApiAccounts = ({ data }: any) => {
+        //TO do work on this with account switcher
+        if (data.msg_type === 'authorize') {
+            const account_list = data?.authorize?.account_list || [];
+            const account_list_filter = account_list.filter((acc: any) => acc.is_disabled === 0);
+            api_accounts.push(account_list_filter || []);
+            const allCurrencies = new Set(Object.values(checkClientAccount).map((acc: any) => acc.currency));
+
+            // Skip disabled accounts when checking for missing currency
+            const accounts = api_accounts.flat();
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            let detected_currency = '';
+            const hasMissingCurrency = accounts.some(data => {
+                if (!allCurrencies.has(data.currency)) {
+                    sessionStorage.setItem('query_param_currency', data.currency);
+                    return true;
+                }
+                detected_currency = data.currency;
+                return false;
+            });
+
+            let hasMissingToken = false;
+            let missingTokenCurrency = '';
+
+            for (const acc of account_list_filter) {
+                if (acc.loginid && !accountsList[acc.loginid]) {
+                    hasMissingToken = true;
+                    missingTokenCurrency = acc.currency || '';
+                    // Store the missing token's currency in session storage
+                    if (missingTokenCurrency) {
+                        sessionStorage.setItem('query_param_currency', missingTokenCurrency);
+                    }
+                    break;
+                }
+            }
+
+            if (hasMissingCurrency || hasMissingToken) {
+                setClientHasCurrency(false);
+            } else {
+                const account_list_ =
+                    account_list_filter?.find((acc: { currency: string }) => acc.currency === currency) ||
+                    account_list_filter?.[0];
+
+                let session_storage_currency =
+                    sessionStorage.getItem('query_param_currency') || account_list_?.currency || 'USD';
+
+                session_storage_currency = `account=${session_storage_currency}`;
+                setClientHasCurrency(true);
+                if (!new URLSearchParams(window.location.search).has('account')) {
+                    window.history.pushState({}, '', `${window.location.pathname}?${session_storage_currency}`);
+                }
+
+                setClientHasCurrency(true);
+            }
+
+            if (subscription) {
+                subscription?.unsubscribe();
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (isCurrencyValid && api_base.api) {
+            // Subscribe to the onMessage event
+            const is_valid_currency = currency && validCurrencies.includes(currency.toUpperCase());
+            if (!is_valid_currency) return;
+            subscription = api_base.api.onMessage().subscribe(validateApiAccounts);
+        }
+    }, []);
+
+    useEffect(() => {
+        // Always set the currency in session storage, even if the user is not logged in
+        // This ensures the currency is available on the callback page
+        setIsAuthenticating(true);
+        if (currency) {
+            sessionStorage.setItem('query_param_currency', currency);
+        }
+
+        // Authentication is now handled by the OAuth flow
+        setIsAuthenticating(false);
+    }, [isClientAccountsPopulated, isCallbackPage, clientHasCurrency, currency]);
+
+    // Add a state to track if initial authentication check is complete
+    const [isInitialAuthCheckComplete, setIsInitialAuthCheckComplete] = useState(false);
+
+    // Effect to mark initial auth check as complete after a short delay
+    useEffect(() => {
+        if (!isAuthenticating && !isInitialAuthCheckComplete) {
+            // Wait a bit to ensure all state updates have propagated
+            const timer = setTimeout(() => {
+                setIsInitialAuthCheckComplete(true);
+            }, 500); // Give it enough time to stabilize
+
+            return () => clearTimeout(timer);
+        }
+    }, [isAuthenticating, isInitialAuthCheckComplete]);
+
+    // Login gate: the tools are only reachable with a Deriv session.
+    if (!isCallbackPage && !isPreviewMode()) {
+        if (!splashDone || oauthPending || sessionRenewing) {
+            return <SplashScreen onDone={finishSplash} hold={oauthPending || sessionRenewing} />;
+        }
+        const logged_in = Boolean(activeLoginid) || hasStoredSession();
+        if (!logged_in && !isLocalDevBypass()) return <LandingPage />;
+    }
+
+    return (
+        <div
+            className={clsx('layout', {
+                responsive: isDesktop,
+                'quick-strategy-active': is_quick_strategy_active && !isDesktop,
+            })}
+        >
+            {!isCallbackPage && <AppHeader isAuthenticating={isAuthenticating || !isInitialAuthCheckComplete} />}
+            <Body>
+                <Outlet />
+            </Body>
+            {!isCallbackPage && isDesktop && <Footer />}
+            {!isCallbackPage && <RiskDisclaimer />}
+        </div>
+    );
+});
+
+export default Layout;

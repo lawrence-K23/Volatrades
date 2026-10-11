@@ -1,0 +1,63 @@
+/**
+ * Manual Trader: a frame holding the embedded DTrader, filling the tab.
+ */
+.manual-trader {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    // On a phone the tab panel can collapse to its content; keep the trader a
+    // usable screen tall there.
+    min-height: calc(100dvh - 12rem);
+    overflow: hidden;
+    background: var(--general-main-1, #ffffff);
+
+    &__frame {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: inherit;
+        border: 0;
+    }
+
+    &__overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.2rem;
+        padding: 2rem;
+        text-align: center;
+        font-size: 1.4rem;
+        color: var(--text-general, #333333);
+        background: var(--general-main-1, #ffffff);
+    }
+
+    &__spinner {
+        width: 3.2rem;
+        height: 3.2rem;
+        border: 0.3rem solid var(--general-section-1, #e2e8f0);
+        border-top-color: var(--brand-primary, #3b82f6);
+        border-radius: 50%;
+        animation: manual-trader-spin 0.8s linear infinite;
+    }
+
+    &__retry {
+        padding: 0.8rem 1.6rem;
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: #ffffff;
+        cursor: pointer;
+        background: var(--brand-primary, #3b82f6);
+        border: 0;
+        border-radius: 0.6rem;
+    }
+}
+
+@keyframes manual-trader-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

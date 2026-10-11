@@ -1,0 +1,75 @@
+{
+    "brand_name": "VolaTrades",
+    "brand_logo": "brand/platform-logo.svg",
+    "brand_logo_dark": "brand/platform-logo.svg",
+    "brand_domain": "deriv.com",
+    "brand_hostname": {
+        "staging": "staging-home.deriv.com/dashboard",
+        "production": "home.deriv.com/dashboard"
+    },
+    "platform": {
+        "name": "VolaTrades",
+        "description": "Manual trading on VolaTrades.",
+        "logo": "brand/platform-logo.svg",
+        "home_url": "https://volatrades.com/",
+        "help_centre_url": "https://trade.deriv.com/help-centre"
+    },
+    "signup_url": {
+        "production": "https://home.deriv.com/dashboard/signup",
+        "staging": "https://staging-home.deriv.com/dashboard/signup"
+    },
+    "deposit_url": {
+        "staging": "https://staging-home.deriv.com/dashboard",
+        "production": "https://home.deriv.com/dashboard"
+    },
+    "auth": {
+        "staging": "https://staging-auth.deriv.com",
+        "production": "https://auth.deriv.com",
+        "oauth_scopes": [
+            "trade",
+            "account_manage"
+        ],
+        "oauth_redirect_uri_staging": "https://staging.volatrades.com/callback",
+        "oauth_redirect_uri_production": "https://volatrades.com/callback",
+        "oauth_app_id": "",
+        "oauth_client_id": ""
+    },
+    "derivws": {
+        "staging": "https://staging-api.derivws.com",
+        "production": "https://api.derivws.com"
+    },
+    "api_core": {
+        "staging": "staging-api-core.deriv.com",
+        "production": "api-core.deriv.com"
+    },
+    "api": {
+        "staging": "staging-api.deriv.com",
+        "production": "api.deriv.com"
+    },
+    "colors": {
+        "primary": "#3B82F6",
+        "secondary": "#64748b",
+        "tertiary": "#8b5cf6",
+        "success": "#10b981",
+        "danger": "#ef4444",
+        "warning": "#f59e0b",
+        "info": "#0ea5e9",
+        "neutral": "#6b7280",
+        "black": "#0f172a",
+        "white": "#ffffff"
+    },
+    "color_variants": {
+        "auto_generate": true,
+        "lighten_percentage": 10,
+        "darken_percentage": 10
+    },
+    "features": {
+        "dark_mode": true,
+        "language_switcher": false
+    },
+    "production_hosts": [
+        "volatrades.com",
+        "www.volatrades.com"
+    ],
+    "environment": ""
+}

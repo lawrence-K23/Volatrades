@@ -1,0 +1,433 @@
+@use 'components/shared/styles/constants' as *;
+@use 'components/shared/styles/mixins' as *;
+
+.app-header {
+    // Above a page's fixed backdrop (Dashboard, Free Bots), which would
+    // otherwise paint over the logo and the auth buttons.
+    position: relative;
+    z-index: 3;
+
+    &__account-settings {
+        padding-inline-end: 1.2rem;
+        border-inline-end: 0.1rem solid var(--general-section-1);
+    }
+
+    &__account-settings,
+    .notifications__wrapper,
+    &__menu {
+        svg > path,
+        svg > g > path {
+            fill: var(--text-prominent);
+        }
+    }
+
+    // Telegram call button beside the logo. It rings: the handset rocks in
+    // bursts with a rest between them, and two rings travel outwards the way an
+    // incoming call is drawn.
+    &__telegram {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 4.2rem;
+        height: 4.2rem;
+        margin-inline-start: 0.4rem;
+        border-radius: 50%;
+        color: #229ed9;
+        transition:
+            transform 140ms ease,
+            background 140ms ease;
+
+        // The two travelling rings. Pointer events off so only the link is hit.
+        &::before,
+        &::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px solid #229ed9;
+            opacity: 0;
+            pointer-events: none;
+            animation: app-header-telegram-ring 2s ease-out infinite;
+        }
+
+        // Second ring follows the first, so they read as a repeating pulse.
+        &::after {
+            animation-delay: 0.45s;
+        }
+
+        svg {
+            position: relative;
+            // Rocks about its middle rather than a corner.
+            transform-origin: 50% 50%;
+            animation: app-header-telegram-shake 2s ease-in-out infinite;
+
+            path {
+                fill: #229ed9 !important;
+            }
+        }
+
+        &:hover {
+            background: rgba(34, 158, 217, 0.12);
+
+            svg {
+                // Hold still under the cursor, so the icon stays readable.
+                animation-play-state: paused;
+            }
+        }
+
+        &:focus-visible {
+            outline: 2px solid #229ed9;
+            outline-offset: 2px;
+        }
+    }
+}
+
+@keyframes app-header-telegram-ring {
+    0% {
+        transform: scale(0.7);
+        opacity: 0.5;
+    }
+
+    70% {
+        transform: scale(1.6);
+        opacity: 0;
+    }
+
+    100% {
+        transform: scale(1.6);
+        opacity: 0;
+    }
+}
+
+// Two quick bursts of rocking, then a rest - the cadence of a ringing phone.
+@keyframes app-header-telegram-shake {
+    0%,
+    54%,
+    100% {
+        transform: rotate(0deg);
+    }
+
+    58% {
+        transform: rotate(-16deg);
+    }
+
+    62% {
+        transform: rotate(13deg);
+    }
+
+    66% {
+        transform: rotate(-11deg);
+    }
+
+    70% {
+        transform: rotate(9deg);
+    }
+
+    74% {
+        transform: rotate(-7deg);
+    }
+
+    78% {
+        transform: rotate(5deg);
+    }
+
+    82% {
+        transform: rotate(-3deg);
+    }
+
+    86% {
+        transform: rotate(0deg);
+    }
+}
+
+// Anyone who asks for less motion gets a still handset.
+@media (prefers-reduced-motion: reduce) {
+    .app-header__telegram {
+        &::before,
+        &::after {
+            animation: none;
+        }
+
+        svg {
+            animation: none;
+        }
+    }
+}
+
+.account-switcher {
+    &__item {
+        .deriv-account-switcher-item {
+            padding: 0.6rem 1.6rem;
+
+            &__detail {
+                .deriv-account-switcher-item__currency {
+                    margin-bottom: 2px;
+                    font-size: 1.4rem;
+                }
+            }
+
+            &__icon {
+                margin-right: unset;
+                margin-inline-end: 10px;
+            }
+        }
+
+        &--disabled {
+            opacity: 0.32;
+        }
+    }
+
+    &__separator:after {
+        background-color: var(--general-section-2);
+        content: '';
+        height: 4px;
+        position: absolute;
+        width: 100%;
+        z-index: 1;
+    }
+
+    &-footer {
+        background: var(--general-main-1);
+
+        &__actions {
+            display: flex;
+            justify-content: right;
+            align-items: center;
+            background-color: var(--du-general-main-2);
+            padding: 1.6rem 0.8rem;
+
+            &--hide-manage-button {
+                justify-content: flex-end;
+            }
+
+            .manage-button {
+                background: none;
+                border: 1px solid var(--button-secondary-default);
+                margin-inline-end: 0.7rem;
+                height: auto;
+                padding: 0.4rem 1.2rem;
+                white-space: break-spaces;
+
+                &:hover {
+                    background-color: unset !important;
+                }
+
+                span {
+                    color: var(--text-prominent);
+                    font-size: var(--text-size-xs);
+                    cursor: pointer;
+                    font-weight: 700;
+                }
+            }
+        }
+    }
+}
+
+.derivs-secondary-tabs {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--general-main-1);
+
+    .derivs-text__size--md {
+        font-size: 14px;
+        line-height: 18px;
+    }
+}
+
+.deriv-account-switcher {
+    &-item {
+        &__balance {
+            button {
+                border-width: 1px;
+                height: 2.4rem;
+                min-width: 4.8rem;
+
+                span {
+                    color: var(--text-prominent) !important;
+                }
+            }
+        }
+    }
+
+    &__button {
+        margin-inline-end: 0.8rem;
+
+        @include mobile-or-tablet-screen {
+            margin-inline-end: 0;
+        }
+
+        .deriv-context-menu {
+            box-shadow: 0 0 2px 0 var(--du-shadow-box, #00000014);
+        }
+
+        .deriv-account-switcher__balance + svg > path {
+            fill: var(--text-general);
+        }
+
+        &:hover {
+            background-color: unset;
+        }
+    }
+
+    &__currency {
+        margin-bottom: 2px;
+    }
+
+    &__icon {
+        margin-right: 7px;
+    }
+
+    &__balance {
+        padding: 0 1rem 0.1rem 0;
+    }
+
+    &__list {
+        &.account-switcher-panel {
+            padding: 0.4rem 0.8rem 0;
+
+            .account-switcher-panel__no-eu-accounts {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+
+                .add-button {
+                    background: none;
+
+                    span {
+                        color: #000;
+                        font-size: 12px;
+                        border: solid 2px var(--text-disabled-1);
+                        padding: 0.1rem 1.6rem;
+                        border-radius: 0.5em;
+                        cursor: pointer;
+                    }
+                }
+
+                .deriv-account-switcher-item {
+                    background: none;
+                }
+            }
+        }
+
+        .deriv-accordion {
+            &__content {
+                background: unset;
+                overflow: auto;
+            }
+
+            &__text {
+                margin-top: 0;
+            }
+
+            &__icon {
+                margin-left: unset;
+                margin-inline-start: auto;
+            }
+        }
+    }
+
+    &__title {
+        height: 4rem;
+        margin: 0 auto;
+        padding: 1.2rem 0.6rem;
+    }
+
+    &__container--mobile {
+        min-height: auto;
+        max-width: 600px;
+    }
+
+    &__container {
+        max-height: 80vh;
+        overflow: auto;
+        background: var(--general-main-1);
+        background-color: var(--general-main-2);
+        border-radius: 4px;
+        box-shadow: 0 8px 16px 0 var(--shadow-menu) !important;
+        position: absolute;
+        transition:
+            transform 0.3s ease,
+            opacity 0.25s linear;
+        width: 320px;
+        top: 55px;
+        right: unset;
+        inset-inline-end: 0;
+    }
+
+    &__tradershub-link {
+        background: var(--du-general-main-2);
+        color: var(--text-prominent);
+        padding: 1rem;
+        display: flex;
+        justify-content: center;
+    }
+
+    &__footer {
+        padding: 0;
+        display: block;
+    }
+}
+
+.languages-modal {
+    background: var(--general-section-1);
+
+    .deriv-modal__header {
+        border-bottom: 2px solid var(--general-section-5);
+    }
+
+    .deriv-modal__close-icon {
+        path {
+            fill: var(--text-prominent);
+        }
+    }
+
+    .deriv-text {
+        color: var(--text-prominent) !important;
+    }
+}
+
+.auth-actions {
+    display: flex;
+    padding-block: 8px;
+    align-items: center;
+
+    button {
+        font-weight: 400;
+        margin-inline-end: 1.6rem;
+        border-radius: 16px;
+
+        // Login / Sign up are disabled until the OAuth app id is configured.
+        // Keep them visually unchanged when disabled (no faded/0.32 opacity).
+        &:disabled,
+        &[disabled] {
+            opacity: 1;
+        }
+    }
+
+    &--loading {
+        align-items: center;
+        margin-inline-end: 1.6rem;
+    }
+
+    &__spinner {
+        width: 2rem;
+        height: 2rem;
+        color: var(--text-prominent);
+        animation: auth-spinner-rotate 0.8s linear infinite;
+    }
+
+}
+
+.deriv-accordion--underline {
+    border-bottom: none;
+}
+
+@keyframes auth-spinner-rotate {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
