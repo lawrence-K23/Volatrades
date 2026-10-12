@@ -125,6 +125,17 @@ export const openExternalUrl = (url: string): void => {
 export const keepNavigationInside = (): void => {
     if (!isEmbedded()) return;
 
+    // Blend into VolaTrades' page: no page-level scrollbar of its own
+    // (scrolling still works where content is taller), no outer margin. Its own page styles
+    // are scoped to this class, so standalone /dtrader/ is unchanged.
+    document.documentElement.classList.add('vt-embedded');
+    const style = document.createElement('style');
+    style.textContent = [
+        'html.vt-embedded, html.vt-embedded body { margin: 0; scrollbar-width: none; -ms-overflow-style: none; }',
+        'html.vt-embedded::-webkit-scrollbar, html.vt-embedded body::-webkit-scrollbar { width: 0; height: 0; }',
+    ].join('\n');
+    document.head.appendChild(style);
+
     window.open = () => null;
 
     document.addEventListener(

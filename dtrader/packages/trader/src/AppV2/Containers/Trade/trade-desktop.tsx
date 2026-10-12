@@ -157,15 +157,17 @@ const TradeDesktop = observer(() => {
                             <TradeParameters />
                             <ClosedMarketMessage />
                             {!is_market_closed && <PurchaseButton />}
-                            <TradeParamsFooter />
+                            {/* [VolaTrades] VolaTrades' own footer has the clock and full screen. */}
+                            {!isEmbedded() && <TradeParamsFooter />}
                         </div>
                     </div>
                     {/* Mobile onboarding */}
-                    {!guide_dtrader_v2?.trade_page && is_logged_in && <OnboardingGuide type='trade_page' />}
+                    {/* [VolaTrades] No DTrader product tours inside VolaTrades. */}
+                    {!isEmbedded() && !guide_dtrader_v2?.trade_page && is_logged_in && <OnboardingGuide type='trade_page' />}
                     {/* Desktop onboarding - new users */}
-                    {is_logged_in && <OnboardingGuideDesktop type='trade_page' />}
+                    {!isEmbedded() && is_logged_in && <OnboardingGuideDesktop type='trade_page' />}
                     {/* [AI] Desktop onboarding - returning mobile users */}
-                    {is_logged_in && <OnboardingGuideDesktopReturning type='trade_page' />}
+                    {!isEmbedded() && is_logged_in && <OnboardingGuideDesktopReturning type='trade_page' />}
                     {/* [/AI] */}
                 </div>
             ) : (
