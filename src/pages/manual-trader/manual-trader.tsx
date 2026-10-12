@@ -21,9 +21,9 @@
  * When the selected account changes (here or in the header), the frame sees
  * the change to localStorage and reloads itself onto the new account.
  *
- * The frame is sandboxed without top-navigation, so nothing inside DTrader
- * can take the whole page away from VolaTrades. Links to other sites
- * (deposit, account hub) open in a new tab instead.
+ * The frame is sandboxed without top-navigation or pop-ups, so nothing inside
+ * DTrader can take the page away from VolaTrades or open another site; the
+ * trader also hides its own navigation (home, help, account, deposit).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
@@ -44,12 +44,11 @@ const LOAD_TIMEOUT_MS = 45000;
 /** At most one automatic reload in this window, so a failing session cannot loop. */
 const RELOAD_COOLDOWN_MS = 60000;
 /**
- * What the frame may do. No allow-top-navigation: DTrader cannot navigate the
- * VolaTrades page. allow-same-origin keeps the shared login (localStorage);
- * the popup flags let deposit/help links open in a normal new tab.
+ * What the frame may do. No allow-top-navigation and no allow-popups: nothing
+ * inside DTrader can navigate the VolaTrades page or open another site.
+ * allow-same-origin keeps the shared login (localStorage).
  */
-const FRAME_SANDBOX =
-    'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads';
+const FRAME_SANDBOX = 'allow-scripts allow-same-origin allow-forms allow-modals allow-downloads';
 
 /** True while VolaTrades holds an access token that has not run out. */
 const hasLiveSession = () => {

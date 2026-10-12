@@ -25,6 +25,7 @@ import {
     getHomeUrl,
     getHelpCentreUrl,
     isFeatureEnabled,
+    isEmbedded,
     routes,
     openExternalUrl,
 } from '@deriv/shared';
@@ -111,7 +112,11 @@ const Sidebar = observer(() => {
     const isPositionsActive = active_sidebar_flyout === 'positions';
     const isReportsActive = isActiveRoute(routes.reports);
 
-    const navigationItems: TSidebarItem[] = [
+    // [VolaTrades] Inside the Manual Trader tab the sidebar keeps only open
+    // positions: VolaTrades' header already has the account, balance and
+    // theme, and nothing here may lead away from VolaTrades.
+    const is_embedded = isEmbedded();
+    const all_navigation_items: TSidebarItem[] = [
         {
             id: 'home',
             icon: <LegacyHomeNewIcon iconSize='xs' fill='var(--color-text-primary)' />,
@@ -143,11 +148,15 @@ const Sidebar = observer(() => {
         },
     ];
 
+    const navigationItems = is_embedded
+        ? all_navigation_items.filter(item => item.id === 'positions')
+        : all_navigation_items;
+
     // Utility items (bottom section)
     const isLanguageActive = active_sidebar_flyout === 'language';
     const isAccountActive = active_sidebar_flyout === 'account';
 
-    const utilityItems = [
+    const all_utility_items = [
         {
             id: 'help',
             icon: <LabelPairedLifeRingSmRegularIcon fill='var(--color-text-primary)' />,
@@ -202,6 +211,8 @@ const Sidebar = observer(() => {
         },
     ];
 
+    const utilityItems = is_embedded ? [] : all_utility_items;
+
     const getFlyoutContent = () => {
         switch (active_sidebar_flyout) {
             case 'language':
@@ -239,6 +250,7 @@ const Sidebar = observer(() => {
                 data-testid='dt_sidebar'
             >
                 {/* Logo Section */}
+                {!is_embedded && (
                 <div className='sidebar__header'>
                     {/* [AI] */}
                     <img
@@ -250,7 +262,8 @@ const Sidebar = observer(() => {
                     />
                     {/* [/AI] */}
                 </div>
-                <div className='sidebar__separator' />
+                )}
+                {!is_embedded && <div className='sidebar__separator' />}
                 {/* Main Navigation */}
                 <nav className='sidebar__nav'>
                     <div className='sidebar__nav-main'>
@@ -281,7 +294,7 @@ const Sidebar = observer(() => {
                     </div>
                     {/* Utility Section */}
                     <div className='sidebar__nav-utility'>
-                        <div className='sidebar__separator' />
+                        {!is_embedded && <div className='sidebar__separator' />}
                         {utilityItems.map(item => {
                             const shouldShow = item.id === 'account' ? is_logged_in : true;
 

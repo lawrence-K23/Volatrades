@@ -13,7 +13,7 @@ import {
     StandaloneHouseBlankFillIcon,
     StandaloneHouseBlankRegularIcon,
 } from '@deriv/quill-icons';
-import { getBrandUrl, routes, openExternalUrl } from '@deriv/shared';
+import { getBrandUrl, isEmbedded, routes, openExternalUrl } from '@deriv/shared';
 import { useStore } from '@deriv/stores';
 import { Badge, Navigation } from '@deriv-com/quill-ui';
 import { Localize } from '@deriv-com/translations';
@@ -31,7 +31,7 @@ const BottomNav = observer(({ className }: BottomNavProps) => {
     const { current_language } = common;
     const { sendBridgeEvent } = useMobileBridge();
 
-    const bottomNavItems = React.useMemo(
+    const all_items = React.useMemo(
         () => [
             {
                 icon: <StandaloneHouseBlankRegularIcon iconSize='sm' fill='var(--color-text-primary)' />,
@@ -102,6 +102,14 @@ const BottomNav = observer(({ className }: BottomNavProps) => {
         [active_positions_count, is_logged_in]
     );
 
+    // [VolaTrades] Inside the Manual Trader tab: Trade and Positions only.
+    // Home and Menu led to Deriv's hub, settings and reports - away from the
+    // trading VolaTrades embeds this for.
+    const bottomNavItems = React.useMemo(
+        () => (isEmbedded() ? all_items.filter(item => item.path === routes.index || item.path === routes.trader_positions) : all_items),
+        [all_items]
+    );
+
     const selectedIndex = React.useMemo(() => {
         if (
             location.pathname === routes.positions ||
@@ -114,7 +122,8 @@ const BottomNav = observer(({ className }: BottomNavProps) => {
             return -1; // No icon highlighted for contract details page
         }
         const idx = bottomNavItems.findIndex(item => item.path === location.pathname);
-        return idx > -1 ? idx : 1; // Default to Trade
+        if (idx > -1) return idx;
+        return Math.max(0, bottomNavItems.findIndex(item => item.path === routes.index)); // Default to Trade
     }, [bottomNavItems, location.pathname]);
 
     const handleSelect = (index: number) => {

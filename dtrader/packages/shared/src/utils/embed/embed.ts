@@ -107,15 +107,43 @@ export const requestHostLogout = (): void => postToHost('logout');
 export const requestHostAccountSwitch = (loginid: string): void => postToHost('switch-account', { loginid });
 
 /**
- * Leave for another site (deposit, account hub, onboarding). Embedded, that
- * opens a new tab rather than replacing the trader inside VolaTrades' frame -
- * those sites refuse to be framed and would leave the tab blank.
+ * Leave for another site (deposit, account hub, onboarding). Embedded, the
+ * user stays inside VolaTrades: nothing is opened.
  */
 export const openExternalUrl = (url: string): void => {
     if (!url) return;
-    if (isEmbedded()) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        return;
-    }
+    if (isEmbedded()) return;
     window.location.href = url;
+};
+
+/**
+ * Embedded, keep every click inside VolaTrades: links to other sites and new
+ * windows do nothing. (VolaTrades' frame sandbox blocks pop-ups and top-level
+ * navigation as well; this also stops a link replacing the trader in its
+ * own frame.) Call once at start-up.
+ */
+export const keepNavigationInside = (): void => {
+    if (!isEmbedded()) return;
+
+    window.open = () => null;
+
+    document.addEventListener(
+        'click',
+        event => {
+            const target = event.target as Element | null;
+            const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+            if (!anchor) return;
+            let leaves = anchor.target === '_blank' || anchor.target === '_top' || anchor.target === '_parent';
+            try {
+                leaves = leaves || new URL(anchor.href, window.location.href).origin !== window.location.origin;
+            } catch {
+                leaves = true;
+            }
+            if (leaves) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        },
+        true
+    );
 };

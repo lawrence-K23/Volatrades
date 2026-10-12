@@ -4,7 +4,7 @@ import { observer } from 'mobx-react-lite';
 
 import { useLocalStorageData } from '@deriv/api';
 import { Loading } from '@deriv/components';
-import { getSymbolDisplayName } from '@deriv/shared';
+import { getSymbolDisplayName, isEmbedded } from '@deriv/shared';
 import { useStore } from '@deriv/stores';
 import { Loader } from '@deriv-com/ui';
 
@@ -132,7 +132,8 @@ const TradeDesktop = observer(() => {
                             trade_types={trade_types}
                             is_dark_mode_on={is_dark_mode_on}
                         />
-                        <AccountHeader />
+                        {/* [VolaTrades] The account and balance live in VolaTrades' header. */}
+                        {!isEmbedded() && <AccountHeader />}
                     </div>
                     {/* Commented out to use chart's native market selector instead */}
                     {/* <MarketSelector /> */}

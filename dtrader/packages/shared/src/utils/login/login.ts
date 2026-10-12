@@ -72,5 +72,6 @@ export const redirectToLogin = async (_language?: string): Promise<void> => {
 
 export const redirectToSignUp = (_language?: string): void => {
     const signup_url = getSignupUrl();
-    if (signup_url) window.open(signup_url, '_blank', 'noopener,noreferrer');
+    // [VolaTrades] Embedded, sign-up is not offered: the user stays inside VolaTrades.
+    if (signup_url && !isEmbedded()) window.open(signup_url, '_blank', 'noopener,noreferrer');
 };

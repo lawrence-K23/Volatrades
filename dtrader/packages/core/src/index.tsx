@@ -1,11 +1,15 @@
 /* eslint-disable import/no-named-as-default-member */
 /* eslint-disable import/no-named-as-default */
+import { keepNavigationInside } from '@deriv/shared';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import App from 'App/app.jsx';
 import initStore from 'App/initStore';
 import AppNotificationMessages from './App/Containers/app-notification-messages.jsx';
+
+// [VolaTrades] Inside VolaTrades, no link or window may lead to another site.
+keepNavigationInside();
 
 // [VolaTrades] No service worker in this build. It cached DTrader's code
 // "cache first", and trader.js keeps the same name between deploys, so an
