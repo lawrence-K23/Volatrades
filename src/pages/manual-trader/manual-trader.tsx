@@ -25,7 +25,7 @@
  * DTrader can take the page away from VolaTrades or open another site; the
  * trader also hides its own navigation (home, help, account, deposit).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { api_base } from '@/external/bot-skeleton/services/api/api-base';
 import { getAuthInfo } from '@/external/deriv-core';
@@ -41,6 +41,8 @@ const EMBED_SOURCE = 'volatrades-dtrader';
 const DTRADER_URL = '/dtrader/';
 /** How long to wait for DTrader to load before offering a retry. */
 const LOAD_TIMEOUT_MS = 45000;
+/** Below this many pixels the trader keeps its own minimum size instead of fitting. */
+const MIN_FIT_HEIGHT = 420;
 /** At most one automatic reload in this window, so a failing session cannot loop. */
 const RELOAD_COOLDOWN_MS = 60000;
 /**
@@ -72,6 +74,33 @@ const ManualTrader = observer(() => {
     const handleLogout = useLogout();
 
     const frame_ref = useRef<HTMLIFrameElement>(null);
+    const container_ref = useRef<HTMLDivElement>(null);
+    const [fit_height, setFitHeight] = useState<number | null>(null);
+
+    // End the trader exactly where VolaTrades' footer begins. The footer is
+    // fixed over the bottom of the page, so a taller frame would have its
+    // bottom strip - the chart's moving time axis - hidden underneath it.
+    useLayoutEffect(() => {
+        const fit = () => {
+            const container = container_ref.current;
+            if (!container) return;
+            const top = container.getBoundingClientRect().top;
+            const footer = document.querySelector('.app-footer') as HTMLElement | null;
+            const footer_height =
+                footer && getComputedStyle(footer).display !== 'none' ? footer.getBoundingClientRect().height : 0;
+            const available = Math.floor(window.innerHeight - top - footer_height);
+            // On small screens keep a usable size and let the page scroll instead.
+            setFitHeight(available >= MIN_FIT_HEIGHT ? available : null);
+        };
+        fit();
+        window.addEventListener('resize', fit);
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+        observer?.observe(document.body);
+        return () => {
+            window.removeEventListener('resize', fit);
+            observer?.disconnect();
+        };
+    }, []);
     const [frame_key, setFrameKey] = useState(0);
     const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
     const last_auto_reload = useRef(0);
@@ -172,7 +201,11 @@ const ManualTrader = observer(() => {
     }, []);
 
     return (
-        <div className='manual-trader'>
+        <div
+            ref={container_ref}
+            className={`manual-trader${fit_height ? ' manual-trader--fitted' : ''}`}
+            style={fit_height ? { height: fit_height } : undefined}
+        >
             {status === 'loading' && (
                 <div className='manual-trader__overlay' role='status'>
                     <span className='manual-trader__spinner' aria-hidden='true' />

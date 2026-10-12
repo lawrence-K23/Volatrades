@@ -9,6 +9,11 @@
     // usable screen tall there.
     min-height: calc(100dvh - 12rem);
     overflow: hidden;
+
+    // Sized in code to end exactly at VolaTrades' footer.
+    &--fitted {
+        min-height: 0;
+    }
     background: var(--general-main-1, #ffffff);
 
     &__frame {
