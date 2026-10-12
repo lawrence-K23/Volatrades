@@ -218,6 +218,8 @@ export type TEvaluateOptions = {
 };
 
 const DEFAULT_RECENT_WINDOW = 120;
+/** Ticks in the "recent" slice the scanners report alongside the full window. */
+export const RECENT_WINDOW = DEFAULT_RECENT_WINDOW;
 const DEFAULT_MIN_TRIGGER_TRIALS = 25;
 
 /** Abramowitz-Stegun normal CDF, good to ~7 decimals. */

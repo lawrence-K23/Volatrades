@@ -1,0 +1,133 @@
+// Stat-card view of a scan result (shared by the Scanner tab and the AI scanner).
+.scan-result {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    color: #0f172a;
+    text-align: start;
+
+    &__pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.2rem;
+
+        @media (max-width: 600px) {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    &__box,
+    &__card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        padding: 1.4rem 1.6rem;
+        border: 2px solid #dbeafe;
+        border-radius: 1.2rem;
+        background: #ffffff;
+        min-width: 0;
+    }
+
+    &__cards {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 1rem;
+
+        @media (max-width: 900px) {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        @media (max-width: 520px) {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    &__card {
+        background: #f8fafc;
+        border-color: #e2e8f0;
+
+        &--good {
+            border-color: #22c55e;
+            background: #f0fdf4;
+
+            .scan-result__value {
+                color: #15803d;
+            }
+        }
+
+        &--neutral {
+            border-color: #f59e0b;
+            background: #fffbeb;
+
+            .scan-result__value {
+                color: #b45309;
+            }
+        }
+
+        &--bad {
+            border-color: #ef4444;
+            background: #fef2f2;
+
+            .scan-result__value {
+                color: #b91c1c;
+            }
+        }
+    }
+
+    &__icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 3rem;
+        height: 3rem;
+        border-radius: 0.8rem;
+        background: #dbeafe;
+        color: #1d4ed8;
+        font-size: 1.5rem;
+        margin-bottom: 0.4rem;
+    }
+
+    &__label {
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #475569;
+    }
+
+    &__big {
+        font-size: 1.7rem;
+        font-weight: 800;
+        overflow-wrap: anywhere;
+    }
+
+    &__value {
+        font-size: 2.4rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    &__small {
+        font-size: 1.1rem;
+        color: #64748b;
+    }
+
+    &__verdict {
+        padding: 1.2rem 1.4rem;
+        border-radius: 1rem;
+        font-size: 1.3rem;
+        font-weight: 600;
+        line-height: 1.45;
+
+        &--good {
+            background: #dcfce7;
+            color: #14532d;
+        }
+
+        &--neutral,
+        &--bad {
+            background: #fef3c7;
+            color: #78350f;
+        }
+    }
+}

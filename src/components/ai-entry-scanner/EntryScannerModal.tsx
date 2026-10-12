@@ -11,8 +11,10 @@ import {
     TScanResult,
     TScanRow,
     TStoreLike,
+    TStrategyEvaluation,
     TStrategyFamily,
 } from '@/utils/analysis';
+import ScanResult from '@/components/scan-result/ScanResult';
 
 import ScannerParametersModal, { TScannerParams } from './ScannerParametersModal';
 import './entry-scanner.scss';
@@ -26,31 +28,21 @@ const PREFS_KEY = 'ai-scanner-prefs';
 type TFamilyFilter = 'all' | TStrategyFamily;
 
 const FAMILY_OPTIONS: { value: TFamilyFilter; label: string }[] = [
-    { value: 'all', label: localize('Every contract Deriv offers') },
-    { value: 'overunder', label: localize('Over / Under only') },
-    { value: 'matchesdiffers', label: localize('Matches / Differs only') },
-    { value: 'evenodd', label: localize('Even / Odd only') },
-    { value: 'callput', label: localize('Rise / Fall only') },
+    { value: 'all', label: localize('All contracts') },
+    { value: 'overunder', label: localize('Over / Under') },
+    { value: 'matchesdiffers', label: localize('Matches / Differs') },
+    { value: 'evenodd', label: localize('Even / Odd') },
+    { value: 'callput', label: localize('Rise / Fall') },
 ];
+
+/** The setup a row reports: its best positive-edge one, else its top-ranked one. */
+const topOf = (row: TScanRow | null): TStrategyEvaluation | null => row?.best ?? row?.evaluations[0] ?? null;
 
 type TProps = {
     isOpen: boolean;
     onClose: () => void;
 };
 
-/** Entry digit for a result: its data-derived trigger, else the latest digit. */
-/**
- * The digit the strategy waits for, or null when it waits for nothing.
- *
- * This used to fall back to the market's current last digit, which reads like
- * an entry rule and is not one - a strategy with no trigger is a standing bias,
- * taken on any tick, and saying "enter on 7" because 7 happens to be on screen
- * sends a trader to wait for a condition the strategy never had.
- */
-const triggerDigitOf = (row: TScanRow): number | null => {
-    const trigger = row.best?.trigger?.previous_digit;
-    return trigger === undefined || trigger === null ? null : trigger;
-};
 
 /**
  * AI Scanner.
@@ -63,7 +55,6 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
     const store = useStore();
     const [ticks_input, setTicksInput] = useState(String(DEFAULT_TICKS));
     const [family, setFamily] = useState<TFamilyFilter>('all');
-    const [show_options, setShowOptions] = useState(false);
     const [is_scanning, setIsScanning] = useState(false);
     const [progress, setProgress] = useState<TScanProgress | null>(null);
     const [result, setResult] = useState<TScanResult | null>(null);
@@ -94,18 +85,25 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
         }
     }, [isOpen]);
 
-    const best = useMemo(() => (result ? pickBest(result) : null), [result]);
+    // Every scanned market, ranked by its top setup - shown whether or not
+    // anything beats fair value, so a scan always ends with real numbers.
+    const ranked = useMemo(
+        () =>
+            [...(result?.rows ?? [])]
+                .filter(row => topOf(row))
+                .sort((a, b) => (topOf(b)?.score ?? -Infinity) - (topOf(a)?.score ?? -Infinity)),
+        [result]
+    );
+    const best = useMemo(() => (result ? (pickBest(result) ?? ranked[0] ?? null) : null), [result, ranked]);
 
     const selected: TScanRow | null = useMemo(() => {
         if (!result) return null;
         if (selected_symbol) return result.rows.find(row => row.symbol === selected_symbol) ?? best;
         return best;
     }, [result, selected_symbol, best]);
+    const selected_evaluation = topOf(selected);
 
-    const leaderboard = useMemo(
-        () => (result?.rows ?? []).filter(row => row.best && row.best.edge > 0).slice(0, LEADERBOARD_SIZE),
-        [result]
-    );
+    const leaderboard = useMemo(() => ranked.slice(0, LEADERBOARD_SIZE), [ranked]);
 
     const runScan = useCallback(async () => {
         const ticks = Math.max(MIN_TICKS, Math.min(MAX_TICKS, parseInt(ticks_input, 10) || DEFAULT_TICKS));
@@ -120,7 +118,6 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
         const cancellation = { cancelled: false };
         cancellation_ref.current = cancellation;
 
-        setShowOptions(false);
         setIsScanning(true);
         setError(null);
         setResult(null);
@@ -155,22 +152,22 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
 
     const handleRun = useCallback(
         async (params: TScannerParams) => {
-            if (!selected?.best) return;
+            if (!selected || !selected_evaluation) return;
             setShowParams(false);
             setIsLoadingBot(true);
             try {
                 // Loads the strategy into Bot Builder and starts it straight away.
                 await loadStrategyIntoBot(store as unknown as TStoreLike, {
                     symbol: selected.symbol,
-                    definition: selected.best.definition,
+                    definition: selected_evaluation.definition,
                     params,
                     meta: {
                         display_name: selected.display_name,
-                        strategy_label: selected.best.definition.label,
-                        confident_win_rate: selected.best.confident_win_rate,
-                        edge: selected.best.edge,
+                        strategy_label: selected_evaluation.definition.label,
+                        confident_win_rate: selected_evaluation.confident_win_rate,
+                        edge: selected_evaluation.edge,
                         ticks_analysed: selected.ticks_analysed,
-                        trigger_digit: selected.best.trigger?.previous_digit ?? null,
+                        trigger_digit: selected_evaluation.trigger?.previous_digit ?? null,
                     },
                     run: true,
                 });
@@ -181,30 +178,13 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
                 if (is_mounted_ref.current) setIsLoadingBot(false);
             }
         },
-        [onClose, selected, store]
+        [onClose, selected, selected_evaluation, store]
     );
 
     if (!isOpen || !store) return null;
 
-    const has_result = !!selected?.best;
-    const market_text = has_result ? `${selected?.display_name} (${selected?.symbol})` : '';
-    const trade_text = has_result ? selected?.best?.definition.label ?? '' : '';
-    const trigger_digit = selected ? triggerDigitOf(selected) : null;
-    const entry = !has_result ? '--' : trigger_digit === null ? localize('Any tick') : String(trigger_digit);
-    // Says what to wait for and what to take, rather than two values with an
-    // arrow between them.
-    const path_text = !has_result
-        ? ''
-        : trigger_digit === null
-          ? localize('Any tick → {{trade}}', { trade: trade_text })
-          : localize('After a {{digit}} → {{trade}}', { digit: trigger_digit, trade: trade_text });
-    const quality = selected?.best?.confident_win_rate;
-
-    const readonlyField = (value: string, placeholder: string) => (
-        <div className={`ai-entry-scanner__input ai-entry-scanner__input--readonly${value ? ' ai-entry-scanner__input--filled' : ''}`}>
-            {value || <span className='ai-entry-scanner__placeholder'>{placeholder}</span>}
-        </div>
-    );
+    const ticks_value = Math.max(MIN_TICKS, Math.min(MAX_TICKS, parseInt(ticks_input, 10) || DEFAULT_TICKS));
+    const mode_label = FAMILY_OPTIONS.find(option => option.value === family)?.label ?? '';
 
     return (
         <div className='ai-entry-scanner__overlay' onClick={onClose}>
@@ -222,149 +202,119 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
                 </div>
 
                 <div className='ai-entry-scanner__body'>
-                    <button
-                        type='button'
-                        className='ai-entry-scanner__options-link'
-                        onClick={() => setShowOptions(open => !open)}
-                        disabled={is_scanning}
-                    >
-                        {show_options ? localize('← Back to results') : localize('← Scanner options')}
-                    </button>
+                    <div className='ai-entry-scanner__hero'>
+                        <span className='ai-entry-scanner__badge'>✦ {localize('Live tick analysis')}</span>
+                        <h3 className='ai-entry-scanner__hero-title'>{localize('Volatility Market Scanner')}</h3>
+                        <p className='ai-entry-scanner__hero-text'>
+                            {localize(
+                                'Measures every contract setup on every volatility index against real Deriv ticks, and its fair odds.'
+                            )}
+                        </p>
+                        <span className={`ai-entry-scanner__radar${is_scanning ? ' ai-entry-scanner__radar--on' : ''}`} aria-hidden='true' />
+                    </div>
 
-                    {show_options ? (
-                        <div className='ai-entry-scanner__form-card'>
-                            <div className='ai-entry-scanner__field'>
-                                <label className='ai-entry-scanner__label' htmlFor='ai-scanner-family'>
-                                    {localize('Contracts to consider')}
-                                </label>
-                                <select
-                                    id='ai-scanner-family'
-                                    className='ai-entry-scanner__input'
-                                    value={family}
-                                    onChange={event => setFamily(event.target.value as TFamilyFilter)}
-                                >
-                                    {FAMILY_OPTIONS.map(option => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <p className='ai-entry-scanner__caption'>
-                                {localize(
-                                    'Markets come from Deriv active_symbols, contracts from contracts_for, and ranking from measured win rates on live tick history.'
-                                )}
-                            </p>
+                    <div className='ai-entry-scanner__chips' role='tablist'>
+                        {FAMILY_OPTIONS.map(option => (
+                            <button
+                                key={option.value}
+                                type='button'
+                                role='tab'
+                                aria-selected={family === option.value}
+                                className={`ai-entry-scanner__chip${family === option.value ? ' ai-entry-scanner__chip--active' : ''}`}
+                                onClick={() => setFamily(option.value)}
+                                disabled={is_scanning}
+                            >
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className='ai-entry-scanner__config'>
+                        <label className='ai-entry-scanner__config-card'>
+                            <span className='ai-entry-scanner__config-label'>
+                                {localize('Scan depth ({{min}}-{{max}})', { min: MIN_TICKS, max: MAX_TICKS })}
+                            </span>
+                            <input
+                                type='number'
+                                className='ai-entry-scanner__config-input'
+                                min={MIN_TICKS}
+                                max={MAX_TICKS}
+                                step={100}
+                                value={ticks_input}
+                                disabled={is_scanning}
+                                onChange={event => setTicksInput(event.target.value)}
+                                onKeyDown={event => {
+                                    if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+                                }}
+                            />
+                        </label>
+                        <div className='ai-entry-scanner__config-card'>
+                            <span className='ai-entry-scanner__config-label'>{localize('Mode')}</span>
+                            <span className='ai-entry-scanner__config-value'>{mode_label}</span>
                         </div>
-                    ) : (
-                        <div className='ai-entry-scanner__form-card'>
-                            <div className='ai-entry-scanner__field'>
-                                <label className='ai-entry-scanner__label'>{localize('Selected market')}</label>
-                                {readonlyField(market_text, localize('Scan for best market'))}
-                            </div>
+                        <div className='ai-entry-scanner__config-card'>
+                            <span className='ai-entry-scanner__config-label'>{localize('Ticks per market')}</span>
+                            <span className='ai-entry-scanner__config-value'>{ticks_value}</span>
+                        </div>
+                    </div>
 
-                            <div className='ai-entry-scanner__row'>
-                                <div className='ai-entry-scanner__field'>
-                                    <label className='ai-entry-scanner__label'>{localize('Trade type')}</label>
-                                    {readonlyField(trade_text, localize('Waiting for scan'))}
-                                </div>
-                                <div className='ai-entry-scanner__field'>
-                                    <label className='ai-entry-scanner__label'>{localize('Prediction path')}</label>
-                                    {readonlyField(path_text, '--')}
-                                </div>
+                    {(is_scanning || (progress && !result)) && (
+                        <div className='ai-entry-scanner__progress-box'>
+                            <div className='ai-entry-scanner__progress-row'>
+                                <span className='ai-entry-scanner__progress-label'>
+                                    {progress?.current_display_name
+                                        ? localize('Analysing {{market}}...', { market: progress.current_display_name })
+                                        : localize('Loading Deriv markets...')}
+                                </span>
+                                {progress && (
+                                    <span className='ai-entry-scanner__progress-count'>
+                                        {progress.completed}/{progress.total}
+                                    </span>
+                                )}
                             </div>
-
-                            <div className='ai-entry-scanner__field ai-entry-scanner__field--narrow'>
-                                <label className='ai-entry-scanner__label' htmlFor='ai-scanner-ticks'>
-                                    {localize('Ticks number ({{min}}-{{max}})', { min: MIN_TICKS, max: MAX_TICKS })}
-                                </label>
-                                <input
-                                    id='ai-scanner-ticks'
-                                    type='number'
-                                    className='ai-entry-scanner__input'
-                                    min={MIN_TICKS}
-                                    max={MAX_TICKS}
-                                    step={100}
-                                    value={ticks_input}
-                                    disabled={is_scanning}
-                                    onChange={event => setTicksInput(event.target.value)}
-                                    onKeyDown={event => {
-                                        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+                            <div className='ai-entry-scanner__progress-track'>
+                                <div
+                                    className='ai-entry-scanner__progress-fill'
+                                    style={{
+                                        width: progress?.total ? `${(progress.completed / progress.total) * 100}%` : '6%',
                                     }}
                                 />
                             </div>
+                        </div>
+                    )}
 
-                            {(is_scanning || progress) && (
-                                <div className='ai-entry-scanner__progress-box'>
-                                    <div className='ai-entry-scanner__progress-row'>
-                                        <span className='ai-entry-scanner__progress-label'>
-                                            {progress?.current_display_name ?? localize('Loading Deriv markets...')}
-                                        </span>
-                                        {progress && (
-                                            <span className='ai-entry-scanner__progress-count'>
-                                                {progress.completed}/{progress.total}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className='ai-entry-scanner__progress-track'>
-                                        <div
-                                            className='ai-entry-scanner__progress-fill'
-                                            style={{
-                                                width: progress?.total
-                                                    ? `${(progress.completed / progress.total) * 100}%`
-                                                    : '6%',
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
+                    {error && <div className='ai-entry-scanner__status ai-entry-scanner__status--error'>{error}</div>}
 
-                            {error && <div className='ai-entry-scanner__status ai-entry-scanner__status--error'>{error}</div>}
+                    {!is_scanning && selected && selected_evaluation && (
+                        <ScanResult market={`${selected.display_name} (${selected.symbol})`} evaluation={selected_evaluation} />
+                    )}
 
-                            {result && !best && !error && (
-                                <div className='ai-entry-scanner__status ai-entry-scanner__status--warn'>
-                                    {localize('No market holds an edge over its fair value on this data. Try a larger tick window.')}
-                                </div>
-                            )}
-
-                            {has_result && selected?.best && (
-                                <div className='ai-entry-scanner__summary-box'>
-                                    <div className='ai-entry-scanner__summary-text'>
-                                        {localize('Best market')}: {selected.display_name} | {trade_text} | {localize('Entry')}{' '}
-                                        {entry} | {localize('Quality')} {quality}%
-                                    </div>
-                                    <div className='ai-entry-scanner__summary-detail'>
-                                        {localize(
-                                            'Won {{rate}}% of {{trials}} ticks (fair value {{fair}}%) - quality is the 95% confidence floor of that win rate.',
-                                            {
-                                                rate: selected.best.win_rate,
-                                                trials: selected.best.trials,
-                                                fair: selected.best.baseline,
-                                            }
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {leaderboard.length > 1 && (
-                                <div className='ai-entry-scanner__leaderboard'>
-                                    <span className='ai-entry-scanner__label'>{localize('Other top markets')}</span>
-                                    {leaderboard.map(row => (
-                                        <button
-                                            key={row.symbol}
-                                            type='button'
-                                            className={`ai-entry-scanner__rank${
-                                                row.symbol === selected?.symbol ? ' ai-entry-scanner__rank--active' : ''
+                    {!is_scanning && leaderboard.length > 1 && (
+                        <div className='ai-entry-scanner__leaderboard'>
+                            <span className='ai-entry-scanner__label'>{localize('Markets ranked')}</span>
+                            {leaderboard.map(row => {
+                                const top = topOf(row);
+                                return (
+                                    <button
+                                        key={row.symbol}
+                                        type='button'
+                                        className={`ai-entry-scanner__rank${
+                                            row.symbol === selected?.symbol ? ' ai-entry-scanner__rank--active' : ''
+                                        }`}
+                                        onClick={() => setSelectedSymbol(row.symbol)}
+                                    >
+                                        <span className='ai-entry-scanner__rank-market'>{row.display_name}</span>
+                                        <span className='ai-entry-scanner__rank-strategy'>{top?.definition.label}</span>
+                                        <span
+                                            className={`ai-entry-scanner__rank-edge${
+                                                (top?.edge ?? 0) > 0 ? ' ai-entry-scanner__rank-edge--good' : ''
                                             }`}
-                                            onClick={() => setSelectedSymbol(row.symbol)}
                                         >
-                                            <span className='ai-entry-scanner__rank-market'>{row.display_name}</span>
-                                            <span className='ai-entry-scanner__rank-strategy'>{row.best?.definition.label}</span>
-                                            <span className='ai-entry-scanner__rank-edge'>{row.best?.confident_win_rate}%</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                                            {top?.win_rate.toFixed(1)}% / {localize('fair')} {top?.baseline.toFixed(0)}%
+                                        </span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -373,18 +323,22 @@ const EntryScannerModal: React.FC<TProps> = ({ isOpen, onClose }) => {
                     <button
                         type='button'
                         className='ai-entry-scanner__btn ai-entry-scanner__btn--primary'
-                        onClick={runScan}
-                        disabled={is_scanning || is_loading_bot}
+                        onClick={() => setShowParams(true)}
+                        disabled={!selected_evaluation || is_scanning || is_loading_bot}
                     >
-                        {is_scanning ? localize('Scanning...') : localize('Scan for Best Market')}
+                        {is_loading_bot
+                            ? localize('Loading bot...')
+                            : selected_evaluation
+                              ? localize('Load {{label}} Strategy', { label: selected_evaluation.definition.label })
+                              : localize('Load Strategy')}
                     </button>
                     <button
                         type='button'
                         className='ai-entry-scanner__btn ai-entry-scanner__btn--secondary'
-                        onClick={() => setShowParams(true)}
-                        disabled={!has_result || is_scanning || is_loading_bot}
+                        onClick={runScan}
+                        disabled={is_scanning || is_loading_bot}
                     >
-                        {is_loading_bot ? localize('Loading bot...') : localize('Load and Run Bot')}
+                        {is_scanning ? localize('Scanning...') : result ? localize('Rescan') : localize('Scan Markets')}
                     </button>
                 </div>
             </div>

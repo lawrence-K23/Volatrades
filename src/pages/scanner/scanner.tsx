@@ -15,6 +15,8 @@ import {
     TStrategyFamily,
 } from '@/utils/analysis';
 
+import ScanResult from '@/components/scan-result/ScanResult';
+
 import './scanner.scss';
 
 const ANALYSIS_TICKS = 1000;
@@ -133,10 +135,10 @@ const bestPerSide = (evaluations: TStrategyEvaluation[]): TStrategyEvaluation[] 
 
 const describeSide = (evaluation: TStrategyEvaluation) => {
     const side = SIDE_LABEL[evaluation.definition.contract_type] ?? evaluation.definition.label;
-    const accuracy = `${evaluation.win_rate.toFixed(2)}% accuracy`;
+    const measured = `won ${evaluation.win_rate.toFixed(1)}% vs ${evaluation.baseline.toFixed(0)}% fair`;
     return evaluation.definition.barrier === null
-        ? `${side} (${accuracy})`
-        : `${side} with ${evaluation.definition.barrier} (${accuracy})`;
+        ? `${side}: ${measured}`
+        : `${side} ${evaluation.definition.barrier}: ${measured}`;
 };
 
 const Scanner = observer(() => {
@@ -148,6 +150,7 @@ const Scanner = observer(() => {
     const [log, setLog] = useState<TLogEntry[]>([]);
     const [dashboard, setDashboard] = useState<TDashboard>(CLOSED_DASHBOARD);
     const [scramble, setScramble] = useState<string[] | null>(null);
+    const [result_view, setResultView] = useState<{ market: string; evaluation: TStrategyEvaluation } | null>(null);
     const [sound_on, setSoundOn] = useState<boolean>(() => {
         try {
             return localStorage.getItem(SOUND_KEY) !== '0';
@@ -267,6 +270,7 @@ const Scanner = observer(() => {
         run_id_ref.current += 1;
         stopScanEffects();
         setDashboard(CLOSED_DASHBOARD);
+        setResultView(null);
     }, [stopScanEffects]);
 
     const runAnalysis = useCallback(
@@ -285,6 +289,7 @@ const Scanner = observer(() => {
                 is_running: true,
             });
             setScramble(null);
+            setResultView(null);
             if (sound_on_ref.current) beeper_ref.current?.start();
             appendLog([{ level: 'ANALYSIS', text: `${strategy_label} on ${symbol} started` }]);
 
@@ -338,41 +343,16 @@ const Scanner = observer(() => {
             // Stage 3 - results on a clean screen.
             setDashboard(prev => ({ ...prev, lines: [] }));
             beeper_ref.current?.stop();
-            push('Analysis Complete!');
+            push('Analysis Complete!', 'success');
+            setResultView({ market: `${active_symbol?.display_name ?? symbol} (${symbol})`, evaluation: best });
 
+            await sleep(LINE_DELAY_MS);
+            if (!alive()) return;
+            push('Every side measured:');
             for (const side of sides) {
-                await sleep(LINE_DELAY_MS);
+                await sleep(LINE_DELAY_MS / 2);
                 if (!alive()) return;
-                push(describeSide(side));
-            }
-
-            await sleep(LINE_DELAY_MS);
-            if (!alive()) return;
-            const edge = best.edge > 0 ? `+${best.edge}` : `${best.edge}`;
-            push(
-                `Best signal: ${SIDE_LABEL[best.definition.contract_type] ?? best.definition.label}${
-                    best.definition.barrier === null ? '' : ` ${best.definition.barrier}`
-                } - ${best.win_rate.toFixed(2)}% over ${best.trials} ticks`,
-                'success'
-            );
-
-            await sleep(LINE_DELAY_MS);
-            if (!alive()) return;
-            push(`Edge vs fair value: ${edge} pts (fair ${best.baseline}%, confidence ${best.confidence}%)`,
-                best.edge > 0 ? 'success' : 'warn');
-
-            if (best.trigger) {
-                await sleep(LINE_DELAY_MS);
-                if (!alive()) return;
-                push(
-                    `Entry: after digit ${best.trigger.previous_digit} - ${best.trigger.win_rate}% of ${best.trigger.trials} ticks`
-                );
-            }
-
-            if (best.edge <= 0) {
-                await sleep(LINE_DELAY_MS);
-                if (!alive()) return;
-                push('No strategy here beat its fair value on this data.', 'warn');
+                push(describeSide(side), side.edge > 0 ? 'success' : 'plain');
             }
 
             await sleep(LINE_DELAY_MS);
@@ -386,7 +366,7 @@ const Scanner = observer(() => {
                 },
             ]);
         },
-        [appendLog, family, stopScanEffects, strategy_label, symbol]
+        [active_symbol, appendLog, family, stopScanEffects, strategy_label, symbol]
     );
 
     const quote_text = live.last_quote === null ? '' : formatQuote(live.last_quote, live.decimals);
@@ -508,6 +488,11 @@ const Scanner = observer(() => {
                         <p className='signal-scanner__line signal-scanner__line--title signal-scanner__dash-title'>
                             {dashboard.title}
                         </p>
+                        {result_view && !scramble && (
+                            <div className='signal-scanner__result'>
+                                <ScanResult market={result_view.market} evaluation={result_view.evaluation} />
+                            </div>
+                        )}
                         <div className='signal-scanner__lines'>
                             {scramble
                                 ? scramble.map((row, index) => (

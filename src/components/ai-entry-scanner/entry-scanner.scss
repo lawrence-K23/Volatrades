@@ -45,8 +45,8 @@
     // Compact panel: wide enough for the two-column form, no more.
     &__modal {
         width: 100%;
-        max-width: 560px;
-        max-height: 82vh;
+        max-width: 920px;
+        max-height: 90vh;
         display: flex;
         flex-direction: column;
         background: #ffffff;
@@ -585,6 +585,178 @@
 
         &__body {
             padding: 1.6rem;
+        }
+    }
+}
+
+/* ---- Redesigned scanner: hero, mode chips, config and ranking (VolaTrades) */
+.ai-entry-scanner {
+    &__body {
+        display: flex;
+        flex-direction: column;
+        gap: 1.4rem;
+    }
+
+    &__hero {
+        position: relative;
+        overflow: hidden;
+        padding: 2rem 2.4rem;
+        border-radius: 1.4rem;
+        color: #ffffff;
+        background:
+            linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 2.4rem 2.4rem,
+            linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 2.4rem 2.4rem,
+            linear-gradient(135deg, #0f2547 0%, #13305f 60%, #1d4ed8 140%);
+    }
+
+    &__badge {
+        display: inline-block;
+        padding: 0.4rem 1.2rem;
+        border: 1px solid rgba(147, 197, 253, 0.6);
+        border-radius: 99rem;
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #bfdbfe;
+    }
+
+    &__hero-title {
+        margin: 1rem 0 0.4rem;
+        font-size: 2.6rem;
+        font-weight: 900;
+        line-height: 1.15;
+        padding-right: 8rem;
+    }
+
+    &__hero-text {
+        margin: 0;
+        font-size: 1.35rem;
+        color: #cbd5e1;
+        padding-right: 8rem;
+    }
+
+    &__radar {
+        position: absolute;
+        top: 50%;
+        right: 2.4rem;
+        width: 7.2rem;
+        height: 7.2rem;
+        margin-top: -3.6rem;
+        border: 2px solid rgba(147, 197, 253, 0.5);
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.35) 0%, transparent 70%);
+
+        &::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, rgba(96, 165, 250, 0.7), transparent 30%);
+            opacity: 0.35;
+        }
+
+        &--on::after {
+            opacity: 1;
+            animation: ai-es-spin 1.2s linear infinite;
+        }
+    }
+
+    &__chips {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.8rem;
+    }
+
+    &__chip {
+        padding: 1rem 0.8rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 1rem;
+        background: #ffffff;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #0f172a;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+
+        &:hover:not(:disabled) {
+            border-color: #93c5fd;
+        }
+
+        &--active {
+            border-color: #2563eb;
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+    }
+
+    &__config {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    &__config-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        padding: 1.2rem 1.6rem;
+        border: 2px solid #dbeafe;
+        border-radius: 1.2rem;
+        background: #ffffff;
+        min-width: 0;
+    }
+
+    &__config-label {
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #475569;
+    }
+
+    &__config-value,
+    &__config-input {
+        font-size: 2.2rem;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    &__config-input {
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        outline: none;
+    }
+
+    &__rank-edge--good {
+        color: #15803d;
+    }
+}
+
+@media (max-width: 720px) {
+    .ai-entry-scanner {
+        &__chips {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        &__config {
+            grid-template-columns: 1fr;
+        }
+
+        &__hero-title,
+        &__hero-text {
+            padding-right: 0;
+        }
+
+        &__radar {
+            display: none;
         }
     }
 }
