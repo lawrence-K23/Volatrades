@@ -17,6 +17,7 @@ import useActiveSymbols from 'AppV2/Hooks/useActiveSymbols';
 import useDefaultSymbol from 'AppV2/Hooks/useDefaultSymbol';
 import { SmartChart } from 'Modules/SmartChart';
 import AccumulatorsChartElements from 'Modules/SmartChart/Components/Markers/accumulators-chart-elements';
+import DigitCircles from 'AppV2/Components/DigitCircles';
 import ToolbarWidgets from 'Modules/SmartChart/Components/toolbar-widgets';
 import TopWidgets from 'Modules/SmartChart/Components/top-widgets';
 import { useSmartChartsAdapter } from 'Modules/SmartChart/Hooks/useSmartChartsAdapter';
@@ -289,6 +290,8 @@ const TradeChart = observer(() => {
                     />
                 )}
             </SmartChart>
+            {/* [VolaTrades] Digit circles with the moving last-tick arrow. */}
+            {show_digits_stats && <DigitCircles />}
         </>
     );
 });
