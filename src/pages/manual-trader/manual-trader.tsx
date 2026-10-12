@@ -41,8 +41,15 @@ const EMBED_SOURCE = 'volatrades-dtrader';
 const DTRADER_URL = '/dtrader/';
 /** How long to wait for DTrader to load before offering a retry. */
 const LOAD_TIMEOUT_MS = 45000;
-/** Below this many pixels the trader keeps its own minimum size instead of fitting. */
+/** The trader never gets shorter than this; below it the page scrolls instead. */
 const MIN_FIT_HEIGHT = 420;
+/** Below this width VolaTrades and the trader use their phone layouts. */
+const SMALL_SCREEN_WIDTH = 768;
+/** What VolaTrades floats over the bottom of the screen, by layout. */
+const DESKTOP_OVERLAYS = ['.app-footer'];
+const SMALL_SCREEN_OVERLAYS = ['.app-footer', '.risk-disclaimer', '.ai-scanner-button__wrapper'];
+/** Space kept between the trader and those floating buttons. */
+const OVERLAY_GAP = 4;
 /** At most one automatic reload in this window, so a failing session cannot loop. */
 const RELOAD_COOLDOWN_MS = 60000;
 /**
@@ -77,27 +84,42 @@ const ManualTrader = observer(() => {
     const container_ref = useRef<HTMLDivElement>(null);
     const [fit_height, setFitHeight] = useState<number | null>(null);
 
-    // End the trader exactly where VolaTrades' footer begins. The footer is
-    // fixed over the bottom of the page, so a taller frame would have its
-    // bottom strip - the chart's moving time axis - hidden underneath it.
+    // Fit the trader into the space VolaTrades leaves free: from the top of
+    // this tab down to whatever VolaTrades floats over the bottom of the
+    // screen - the footer on desktop; the Risk Disclaimer and AI buttons on a
+    // phone. Anything taller would have its bottom (the chart's time axis, or
+    // the phone layout's Buy buttons and Trade/Positions bar) hidden.
     useLayoutEffect(() => {
         const fit = () => {
             const container = container_ref.current;
             if (!container) return;
-            const top = container.getBoundingClientRect().top;
-            const footer = document.querySelector('.app-footer') as HTMLElement | null;
-            const footer_height =
-                footer && getComputedStyle(footer).display !== 'none' ? footer.getBoundingClientRect().height : 0;
-            const available = Math.floor(window.innerHeight - top - footer_height);
-            // On small screens keep a usable size and let the page scroll instead.
-            setFitHeight(available >= MIN_FIT_HEIGHT ? available : null);
+            const viewport_height = window.visualViewport?.height ?? window.innerHeight;
+            const is_small_screen = window.innerWidth < SMALL_SCREEN_WIDTH;
+            // Position in the page, so scrolling does not change the result.
+            const top = container.getBoundingClientRect().top + window.scrollY;
+
+            const overlay_selectors = is_small_screen ? SMALL_SCREEN_OVERLAYS : DESKTOP_OVERLAYS;
+            let bottom_reserve = 0;
+            overlay_selectors.forEach(selector => {
+                const element = document.querySelector(selector) as HTMLElement | null;
+                if (!element || getComputedStyle(element).display === 'none') return;
+                const rect = element.getBoundingClientRect();
+                if (!rect.height || rect.top < viewport_height / 2) return; // only bars at the bottom
+                bottom_reserve = Math.max(bottom_reserve, viewport_height - rect.top + OVERLAY_GAP);
+            });
+
+            const available = Math.floor(viewport_height - top - bottom_reserve);
+            // A short screen (a phone on its side) keeps a usable size; the page scrolls.
+            setFitHeight(Math.max(available, MIN_FIT_HEIGHT));
         };
         fit();
         window.addEventListener('resize', fit);
+        window.visualViewport?.addEventListener('resize', fit);
         const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
         observer?.observe(document.body);
         return () => {
             window.removeEventListener('resize', fit);
+            window.visualViewport?.removeEventListener('resize', fit);
             observer?.disconnect();
         };
     }, []);
