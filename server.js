@@ -40,6 +40,24 @@ const TYPES = {
     '.symbols': 'text/plain; charset=utf-8',
 };
 
+/** Replaces DTrader's old service worker: clear its caches, unregister, reload. */
+const DTRADER_SW_KILL_SWITCH = `
+const DTRADER_CACHES = ['google-fonts-stylesheets', 'google-fonts-webfonts', 'cdn-resources', 'assets',
+    'core-js-files', 'smartchart-files', 'core-css-files', 'packages-files'];
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => {
+    event.waitUntil((async () => {
+        const names = await caches.keys();
+        await Promise.all(names
+            .filter(name => DTRADER_CACHES.includes(name) || name.startsWith('workbox-'))
+            .map(name => caches.delete(name)));
+        await self.registration.unregister();
+        const pages = await self.clients.matchAll({ type: 'window' });
+        pages.forEach(page => page.navigate(page.url));
+    })());
+});
+`;
+
 const COMPRESSIBLE = /^(text\/|application\/(json|xml|javascript|wasm))/;
 
 const send = (res, status, body, headers = {}) => {
@@ -157,6 +175,19 @@ const server = http.createServer((req, res) => {
     if (/^\/dtrader(\/|$)/.test((req.url || '/').split('?')[0])) {
         res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
         res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    }
+
+    // DTrader's template installed a service worker at /dtrader/ whose
+    // cache-first rule also matched its pages, so a browser that ever ran it
+    // kept the old trader forever. Browsers re-check this script on their
+    // own, so answering with a worker that clears those caches, unregisters
+    // itself and reloads its pages removes it everywhere.
+    if ((req.url || '').split('?')[0] === '/dtrader/service-worker.js') {
+        res.writeHead(200, {
+            'Content-Type': 'text/javascript; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+        });
+        return res.end(DTRADER_SW_KILL_SWITCH);
     }
 
     const file = resolveFile(req.url || '/');

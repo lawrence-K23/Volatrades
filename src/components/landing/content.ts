@@ -57,7 +57,190 @@ export type TReview = {
  * and agree to be quoted. While this list is empty, the carousel shows the
  * platform highlights below instead, so no invented testimonials are published.
  */
-export const REVIEWS: TReview[] = [];
+// Customer reviews supplied by the VolaTrades owner. `rating: 0` shows no
+// stars - add a 1-5 rating only where the customer actually gave one.
+export const REVIEWS: TReview[] = [
+    {
+        name: 'Amina Ndlovu',
+        role: 'Synthetic Indices Trader — Johannesburg, South Africa',
+        quote: 'I load strategies fast, run them with confidence, and track everything in one place.',
+        rating: 0,
+    },
+    {
+        name: 'Kevin Omondi',
+        role: 'Rise/Fall Trader — Mombasa, Kenya',
+        quote: 'Finally, a trading platform that keeps things clear and organized. Vola makes my workflow much easier.',
+        rating: 0,
+    },
+    {
+        name: 'James Mwangi',
+        role: 'Deriv Trader — Nairobi, Kenya',
+        quote: 'Vola is the place to be if you want your trading tools organized and your strategy workflow simple.',
+        rating: 0,
+    },
+    {
+        name: 'Linda Njeri',
+        role: 'Synthetic Indices Trader — Nakuru, Kenya',
+        quote: 'I like having my bots, charts, and strategies accessible from one dashboard. Less searching, more focus.',
+        rating: 0,
+    },
+    {
+        name: 'Thabo Mokoena',
+        role: 'Volatility Trader — Pretoria, South Africa',
+        quote: 'The interface is clean, the tools are easy to find, and the overall experience feels well thought out.',
+        rating: 0,
+    },
+    {
+        name: 'Sarah Kamau',
+        role: 'Rise/Fall Trader — Kisumu, Kenya',
+        quote: 'Vola caught my attention because of its approach to bot building. It\'s a great concept for traders who enjoy exploring automation.',
+        rating: 0,
+    },
+    {
+        name: 'David Otieno',
+        role: 'Synthetic Indices Trader — Eldoret, Kenya',
+        quote: 'If you\'re into Deriv trading, Vola is definitely worth checking out. I like how the different tools fit together.',
+        rating: 0,
+    },
+    {
+        name: 'Precious Maseko',
+        role: 'Deriv Trader — Durban, South Africa',
+        quote: 'Everything feels organized, from the dashboard to the strategy tools. Vola has a look and feel I really appreciate.',
+        rating: 0,
+    },
+    {
+        name: 'Brian Wekesa',
+        role: 'Volatility Trader — Nairobi, Kenya',
+        quote: 'The visual bot builder is what interests me most. Being able to work with strategies visually is a welcome idea.',
+        rating: 0,
+    },
+    {
+        name: 'Zanele Nkosi',
+        role: 'Synthetic Indices Trader — Cape Town, South Africa',
+        quote: 'Vola gives me an interesting workspace for exploring strategies and learning more about automated trading.',
+        rating: 0,
+    },
+    {
+        name: 'Mary Wanjiku',
+        role: 'Deriv Trader — Thika, Kenya',
+        quote: 'I prefer platforms that don\'t make simple tasks complicated. Vola\'s layout makes the tools easy to locate.',
+        rating: 0,
+    },
+    {
+        name: 'Tinashe Ncube',
+        role: 'Rise/Fall Trader — Harare, Zimbabwe',
+        quote: 'A good trading setup starts with having the right tools at hand. That\'s what I like about Vola\'s dashboard.',
+        rating: 0,
+    },
+    {
+        name: 'Eric Ochieng',
+        role: 'Synthetic Indices Trader — Kisumu, Kenya',
+        quote: 'Vola is the kind of platform I\'d recommend exploring if you\'re interested in strategy building and trading automation.',
+        rating: 0,
+    },
+    {
+        name: 'Chipo Ndlovu',
+        role: 'Deriv Trader — Bulawayo, Zimbabwe',
+        quote: 'The dark interface looks great, and the navigation makes sense. A solid design for a trading-focused platform.',
+        rating: 0,
+    },
+    {
+        name: 'Faith Odhiambo',
+        role: 'Rise/Fall Trader — Mombasa, Kenya',
+        quote: 'I like the flexibility of exploring ready-made strategies while also having the option to build something custom.',
+        rating: 0,
+    },
+    {
+        name: 'Kabelo Molefe',
+        role: 'Volatility Trader — Johannesburg, South Africa',
+        quote: 'Vola brings several trading-related tools together in one place. That\'s a practical idea for anyone building a trading workflow.',
+        rating: 0,
+    },
+    {
+        name: 'Ann Wambui',
+        role: 'Synthetic Indices Trader — Nairobi, Kenya',
+        quote: 'The dashboard is straightforward, the design is modern, and the bot features give me plenty to explore.',
+        rating: 0,
+    },
+    {
+        name: 'Blessing Moyo',
+        role: 'Deriv Trader — Lusaka, Zambia',
+        quote: 'For me, Vola stands out because of the combination of visual bot building and accessible trading tools.',
+        rating: 0,
+    },
+    {
+        name: 'George Ouma',
+        role: 'Rise/Fall Trader — Kisumu, Kenya',
+        quote: 'I appreciate a platform that puts strategy development front and center. Vola has an interesting direction.',
+        rating: 0,
+    },
+    {
+        name: 'Naledi Molefe',
+        role: 'Synthetic Indices Trader — Gaborone, Botswana',
+        quote: 'Vola is worth a look if you\'re trying to bring more structure to how you explore trading strategies.',
+        rating: 0,
+    },
+    {
+        name: 'Peter Onyango',
+        role: 'Volatility Trader — Nakuru, Kenya',
+        quote: 'The ability to explore bots and charts from the same workspace is a feature I can appreciate.',
+        rating: 0,
+    },
+    {
+        name: 'Rudo Mlambo',
+        role: 'Deriv Trader — Harare, Zimbabwe',
+        quote: 'I like the focus on automation without making the whole interface look intimidating. The layout is easy to follow.',
+        rating: 0,
+    },
+    {
+        name: 'Josephine Wairimu',
+        role: 'Synthetic Indices Trader — Nyeri, Kenya',
+        quote: 'Vola has a professional look and an interesting set of features. I\'m particularly interested in the strategy editor.',
+        rating: 0,
+    },
+    {
+        name: 'Sipho Dlamini',
+        role: 'Rise/Fall Trader — Durban, South Africa',
+        quote: 'A well-organized dashboard makes a difference. Vola puts the main trading tools where I would expect to find them.',
+        rating: 0,
+    },
+    {
+        name: 'Cynthia Atieno',
+        role: 'Deriv Trader — Nairobi, Kenya',
+        quote: 'If automated trading interests you, Vola is a platform worth exploring. The visual approach to strategies is appealing.',
+        rating: 0,
+    },
+    {
+        name: 'Musa Nkosi',
+        role: 'Volatility Trader — Pretoria, South Africa',
+        quote: 'What I like most is the idea of bringing bot creation, charts, and analysis into one convenient workspace.',
+        rating: 0,
+    },
+    {
+        name: 'Victor Wanyama',
+        role: 'Synthetic Indices Trader — Mombasa, Kenya',
+        quote: 'Vola has a clean design and a straightforward layout. It makes exploring the platform feel less overwhelming.',
+        rating: 0,
+    },
+    {
+        name: 'Esther Nambasa',
+        role: 'Deriv Trader — Kampala, Uganda',
+        quote: 'The strategy templates are an interesting starting point, especially when you want to explore different approaches before building your own.',
+        rating: 0,
+    },
+    {
+        name: 'Daniel Kiptoo',
+        role: 'Rise/Fall Trader — Eldoret, Kenya',
+        quote: 'I\'m interested in tools that help me organize my trading process. Vola\'s dashboard and bot-building concept caught my eye.',
+        rating: 0,
+    },
+    {
+        name: 'Rethabile Nkomo',
+        role: 'Synthetic Indices Trader — Johannesburg, South Africa',
+        quote: 'Vola is the place to explore trading tools, learn about automation, and build a workflow that suits your approach.',
+        rating: 0,
+    },
+];
 
 export type THighlight = {
     badge: string;
