@@ -429,3 +429,65 @@
         }
     }
 }
+
+/* AI Scan row and the scanned side's button (VolaTrades) */
+.bulk-trader {
+    &__scan-row {
+        display: flex;
+        align-items: stretch;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    &__scan-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.9rem 1.8rem;
+        border: 0;
+        border-radius: 0.8rem;
+        background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+        color: #ffffff;
+        font-size: 1.4rem;
+        font-weight: 800;
+        cursor: pointer;
+        box-shadow: 0 0.4rem 1.2rem rgba(79, 70, 229, 0.35);
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    }
+
+    &__scan-summary {
+        flex: 1 1 24rem;
+        display: flex;
+        align-items: center;
+        padding: 0.8rem 1.2rem;
+        border-radius: 0.8rem;
+        font-size: 1.25rem;
+        font-weight: 600;
+        line-height: 1.4;
+
+        &--good {
+            background: #dcfce7;
+            color: #14532d;
+        }
+
+        &--neutral {
+            background: #fef3c7;
+            color: #78350f;
+        }
+
+        &--stale {
+            background: #f1f5f9;
+            color: #475569;
+        }
+    }
+
+    &__button--scanned {
+        outline: 3px solid #facc15;
+        outline-offset: 2px;
+        box-shadow: 0 0 1.6rem rgba(250, 204, 21, 0.6);
+    }
+}

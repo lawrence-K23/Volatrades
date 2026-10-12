@@ -4,6 +4,7 @@ import { LabelPairedChevronDownLgRegularIcon } from '@deriv/quill-icons/LabelPai
 import { localize } from '@deriv-com/translations';
 import { useStore } from '@/hooks/useStore';
 import { useTickData, type TPercentPair } from '@/hooks/useTickData';
+import BulkScanner, { TBulkScanPick } from './bulk-scanner';
 import './bulk-trader.scss';
 type TTradeType = 'even_odd' | 'over_under' | 'matches_differs';
 
@@ -43,6 +44,9 @@ const BulkTrader = () => {
     // Shown only while trading or after a failed trade; idle shows nothing.
     const [statusText, setStatusText] = useState<string | null>(null);
     const [statusIsError, setStatusIsError] = useState(false);
+    // AI scanner: open state and the setup it last applied.
+    const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [scanPick, setScanPick] = useState<TBulkScanPick | null>(null);
 
     const circlesContainerRef = useRef<HTMLDivElement>(null);
     const indicatorTrackRef = useRef<HTMLDivElement>(null);
@@ -75,6 +79,33 @@ const BulkTrader = () => {
     }, []);
 
     const showPrediction = tradeType === 'over_under' || tradeType === 'matches_differs';
+
+    const scannerSymbols = useMemo(() => availableSymbols.map(item => item.symbol), [availableSymbols]);
+
+    const applyScanPick = useCallback(
+        (pick: TBulkScanPick) => {
+            if (!availableSymbols.some(item => item.symbol === pick.symbol)) {
+                setStatusIsError(true);
+                setStatusText(localize('{{market}} is not available in the Bulk Trader.', { market: pick.display_name }));
+                return;
+            }
+            setStatusText(null);
+            setSelectedSymbol(pick.symbol);
+            setTradeType(pick.trade_type);
+            if (pick.prediction !== null) setPrediction(pick.prediction);
+            setScanPick(pick);
+        },
+        [availableSymbols, setSelectedSymbol]
+    );
+
+    /** The scan's setup is still what the Bulk Trader is set to. */
+    const scanPickActive =
+        !!scanPick &&
+        scanPick.symbol === selectedSymbol &&
+        scanPick.trade_type === tradeType &&
+        (scanPick.prediction === null || scanPick.prediction === clampDigit(prediction));
+
+    const isScannedSide = (contract_type: string) => scanPickActive && scanPick?.contract_type === contract_type;
 
     const tradeConfig = useMemo(() => {
         if (tradeType === 'over_under') {
@@ -442,6 +473,48 @@ const BulkTrader = () => {
                 </div>
             </div>
 
+            <div className='bulk-trader__scan-row'>
+                <button
+                    type='button'
+                    className='bulk-trader__scan-button'
+                    onClick={() => setIsScannerOpen(true)}
+                    disabled={isTrading}
+                >
+                    <span aria-hidden='true'>✦</span> {localize('AI Scan')}
+                </button>
+                {scanPick && (
+                    <div
+                        className={`bulk-trader__scan-summary${
+                            scanPickActive
+                                ? scanPick.evaluation.edge > 0
+                                    ? ' bulk-trader__scan-summary--good'
+                                    : ' bulk-trader__scan-summary--neutral'
+                                : ' bulk-trader__scan-summary--stale'
+                        }`}
+                    >
+                        {scanPickActive
+                            ? localize(
+                                  '{{label}} on {{market}}: won {{rate}}% of {{trials}} ticks vs {{fair}}% fair - {{verdict}}',
+                                  {
+                                      label: scanPick.evaluation.definition.label,
+                                      market: scanPick.display_name,
+                                      rate: scanPick.evaluation.win_rate.toFixed(1),
+                                      trials: scanPick.evaluation.trials,
+                                      fair: scanPick.evaluation.baseline.toFixed(0),
+                                      verdict:
+                                          scanPick.evaluation.edge > 0
+                                              ? localize('edge confirmed on this data')
+                                              : localize('no real edge'),
+                                  }
+                              )
+                            : localize('Settings changed since the scan ({{label}} on {{market}}). Scan again to refresh.', {
+                                  label: scanPick.evaluation.definition.label,
+                                  market: scanPick.display_name,
+                              })}
+                    </div>
+                )}
+            </div>
+
             <div className={`bulk-trader__params-row ${showPrediction ? 'bulk-trader__params-row--split' : ''}`}>
                 <div className='bulk-trader__field'>
                     <label className='bulk-trader__label'>{localize('NUMBER OF TICKS')}</label>
@@ -554,7 +627,9 @@ const BulkTrader = () => {
 
             <div className='bulk-trader__buttons-row'>
                 <button
-                    className='bulk-trader__button bulk-trader__button-left'
+                    className={`bulk-trader__button bulk-trader__button-left${
+                        isScannedSide(tradeConfig.leftContractType) ? ' bulk-trader__button--scanned' : ''
+                    }`}
                     onClick={() => executeBulkTrade(tradeConfig.leftContractType as TDigitContractType)}
                     disabled={isTrading}
                     type='button'
@@ -563,7 +638,9 @@ const BulkTrader = () => {
                     <div className='bulk-trader__button-percent'>{leftRight.left.toFixed(1)}%</div>
                 </button>
                 <button
-                    className='bulk-trader__button bulk-trader__button-right'
+                    className={`bulk-trader__button bulk-trader__button-right${
+                        isScannedSide(tradeConfig.rightContractType) ? ' bulk-trader__button--scanned' : ''
+                    }`}
                     onClick={() => executeBulkTrade(tradeConfig.rightContractType as TDigitContractType)}
                     disabled={isTrading}
                     type='button'
@@ -583,6 +660,15 @@ const BulkTrader = () => {
                 </p>
             )}
             </div>
+
+            <BulkScanner
+                isOpen={isScannerOpen}
+                onClose={() => setIsScannerOpen(false)}
+                symbols={scannerSymbols}
+                initialTicks={clampTicks(ticksCount)}
+                initialTradeType={tradeType}
+                onApply={applyScanPick}
+            />
         </div>
     );
 };
