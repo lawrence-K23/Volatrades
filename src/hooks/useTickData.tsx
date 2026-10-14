@@ -37,6 +37,8 @@ const DEFAULT_SYMBOL = '1HZ100V';
 const DEFAULT_TICK_LIMIT = 1000;
 const HEARTBEAT_INTERVAL_MS = 5000;
 const STALL_THRESHOLD_MS = 12000;
+/** How long a stream start may take before the heartbeat retries it. */
+const START_GRACE_MS = 20000;
 
 type TTickDataContextValue = {
     availableSymbols: TActiveSymbol[];
@@ -216,12 +218,22 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [isLoadingTicks, setIsLoadingTicks] = useState<boolean>(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
+    // Bumped to (re)start the stream for the current market. The old way -
+    // set the market to '' and straight back - is merged by React 18 into a
+    // single "no change" update, so a stream that failed to start (the app
+    // loads before Deriv is connected) never restarted until the user picked
+    // another market.
+    const [streamRestartToken, setStreamRestartToken] = useState(0);
 
     const selectedSymbolRef = useRef<string>(selectedSymbol);
     const tickLimitRef = useRef<number>(tickLimit);
     const pipSizeRef = useRef<number>(currentPipSize);
     const isMountedRef = useRef(true);
     const onMessageSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
+    /** The API instance the tick listener is attached to; a reconnect replaces it. */
+    const listenedApiRef = useRef<unknown>(null);
+    /** When the current start attempt began (0 = none in progress). */
+    const streamStartingSinceRef = useRef(0);
     const initSymbolsRef = useRef(false);
     const symbolChangeNonceRef = useRef(0);
     const lastTickEpochRef = useRef<number>(0);
@@ -248,6 +260,14 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     useEffect(() => {
         selectedSymbolRef.current = selectedSymbol;
     }, [selectedSymbol]);
+
+    /** Restart the history load and live stream for the current market. */
+    const restartStream = useCallback(() => {
+        symbolChangeNonceRef.current += 1;
+        liveTickingForSymbolRef.current = null;
+        lastTickEpochRef.current = 0;
+        if (isMountedRef.current) setStreamRestartToken(token => token + 1);
+    }, []);
 
     useEffect(() => {
         tickLimitRef.current = Number.isFinite(tickLimit) && tickLimit > 0 ? tickLimit : DEFAULT_TICK_LIMIT;
@@ -438,12 +458,7 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     symbolChangeNonceRef.current += 1;
                     liveTickingForSymbolRef.current = null;
                     selectedSymbolRef.current = finalSymbol;
-                    if (isMountedRef.current) {
-                        setSelectedSymbolState('');
-                        queueMicrotask(() => {
-                            if (isMountedRef.current) setSelectedSymbolState(finalSymbol);
-                        });
-                    }
+                    if (isMountedRef.current) setSelectedSymbolState(finalSymbol);
                 }
             } catch (_err: any) {
                 if (!mounted) return;
@@ -464,7 +479,12 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     useEffect(() => {
         const ensureOnMessage = () => {
             if (!api_base.api) return false;
-            if (onMessageSubscriptionRef.current) return true;
+            // A reconnect (account switch, network drop) brings a new API
+            // object; a listener on the old one would never hear a tick again.
+            if (onMessageSubscriptionRef.current && listenedApiRef.current === api_base.api) return true;
+            onMessageSubscriptionRef.current?.unsubscribe();
+            onMessageSubscriptionRef.current = null;
+            listenedApiRef.current = api_base.api;
             try {
                 onMessageSubscriptionRef.current = api_base.api.onMessage().subscribe(({ data }: { data: any }) => {
                     if (!data || data?.error) return;
@@ -535,6 +555,7 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         let cancelled = false;
 
         const run = async () => {
+            streamStartingSinceRef.current = Date.now();
             try {
                 if (currentNonce !== symbolChangeNonceRef.current) return;
                 try { await waitForApiReady(30, 200); } catch (_) {}
@@ -655,6 +676,8 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 connectionStatusRef.current = false;
                 setIsConnected(false);
                 setIsLoadingTicks(false);
+            } finally {
+                if (currentNonce === symbolChangeNonceRef.current) streamStartingSinceRef.current = 0;
             }
         };
 
@@ -662,7 +685,7 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return () => {
             cancelled = true;
         };
-    }, [selectedSymbol]);
+    }, [selectedSymbol, streamRestartToken]);
 
     useEffect(() => {
         const nonce = symbolChangeNonceRef.current;
@@ -687,20 +710,14 @@ export const TickDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 liveTickingForSymbolRef.current === selectedSymbolRef.current &&
                 // Epochs are in seconds; the threshold is in milliseconds.
                 now - lastTickEpochRef.current > STALL_THRESHOLD_MS / 1000;
-            if (ready && (liveTickingForSymbolRef.current !== selectedSymbolRef.current || stalled)) {
-                symbolChangeNonceRef.current += 1;
-                liveTickingForSymbolRef.current = null;
-                lastTickEpochRef.current = 0;
-                const sym = selectedSymbolRef.current;
-                queueMicrotask(() => {
-                    if (!isMountedRef.current) return;
-                    setSelectedSymbolState('');
-                    queueMicrotask(() => { if (isMountedRef.current) setSelectedSymbolState(sym); });
-                });
+            // Leave a start attempt that is still loading alone for a while.
+            const starting = streamStartingSinceRef.current > 0 && Date.now() - streamStartingSinceRef.current < START_GRACE_MS;
+            if (ready && !starting && (liveTickingForSymbolRef.current !== selectedSymbolRef.current || stalled)) {
+                restartStream();
             }
         }, HEARTBEAT_INTERVAL_MS);
         return () => clearInterval(heartbeat);
-    }, []);
+    }, [restartStream]);
 
     useEffect(() => {
         return () => {
